@@ -361,7 +361,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <button class="tab myteam-tab" data-tab="myteam" onclick="showTab('myteam')" id="myteam-tab-btn">🏏 MY TEAM</button>
     <button class="tab trade-tab" data-tab="trade" onclick="showTab('trade')" id="trade-tab-btn">🔄 TRADES</button>
     <button class="tab console-tab" data-tab="console" onclick="showTab('console')" id="console-tab-btn">📋 CONSOLE</button>
-    <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="color:#a050ff;">👁 ALL SQUADS</button>
+    <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="display:none;color:#a050ff;">👁 ALL SQUADS</button>
     <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
     <button class="tab" style="color:#32dc96;" data-tab="sold-players" onclick="showTab('sold-players')" id="sold-players-tab-btn">✅ SOLD <span class="count" id="c-sold-players" style="background:#32dc96;">0</span></button>
     <button class="tab" data-tab="pace" onclick="showTab('pace')">🔥 Pace <span class="count" id="c-pace"></span></button>
@@ -626,6 +626,7 @@ function doLogout(){
   document.getElementById('admin-trade-box').style.display='none';
   document.getElementById('reset-modal').style.display='none';
   document.getElementById('manage-teams-section').style.display='none';
+  document.getElementById('allsquads-tab-btn').style.display='none';
   document.getElementById('squad-manager-section') && (document.getElementById('squad-manager-section').style.display='none');
   document.getElementById('app').style.display='none';
   document.getElementById('login-screen').style.display='flex';
@@ -657,6 +658,7 @@ function launchApp(){
     document.getElementById('trade-tab-btn').style.display='none';
     document.getElementById('squad-manager-section').style.display='block';
   document.getElementById('manage-teams-section').style.display='block';
+  document.getElementById('allsquads-tab-btn').style.display='';
     renderManageTeams();
     renderSquadManager();
   }
@@ -686,7 +688,7 @@ function refreshAll(){
   renderSoldPlayersPanel();
   Object.keys(PLAYER_DATA).forEach(renderCategoryPanel);
   updateUnsoldPoolOption();
-  renderAllSquadsPanel();
+  if(isAdmin) renderAllSquadsPanel();
   document.getElementById('sold-count').textContent=(auctionState.soldLog||[]).filter(s=>s.sold).length;
 }
 
@@ -1718,6 +1720,7 @@ async function confirmFullReset(){
 function renderAllSquadsPanel(){
   const el = document.getElementById('panel-allsquads');
   if(!el) return;
+  if(!isAdmin){ el.innerHTML=''; return; }
   const teams = Object.keys(teamsData).length ? teamsData : DEFAULT_TEAMS;
   const totalTeams = Object.keys(teams).length;
   const totalSold = Object.values(teams).reduce((a,t)=>a+(t.players||[]).length,0);
@@ -1780,20 +1783,22 @@ function renderAllSquadsPanel(){
         </div>
       </div>
 
-      <!-- Players by role -->
+      <!-- Players by role with remove buttons -->
       ${players.length ? Object.entries(byRole).filter(([,arr])=>arr.length).map(([role,arr])=>`
         <div style="margin-bottom:8px;">
           <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:5px;">${roleIcon[role]} ${role.toUpperCase()}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
             ${arr.map(p=>{
               const price = (team.playerPrices||{})[p];
-              const isLog = (auctionState.soldLog||[]).find(e=>e.player===p&&e.traded);
-              return `<div style="background:var(--surface);border:1px solid ${isForeign(p)?'rgba(80,160,255,.3)':'rgba(255,255,255,.07)'};border-radius:6px;padding:4px 8px;font-size:11px;display:flex;align-items:center;gap:4px;">
+              const isTraded = (auctionState.soldLog||[]).find(e=>e.player===p&&e.traded);
+              const safeP = p.replace(/'/g,"&apos;");
+              return `<div style="background:var(--surface);border:1px solid ${isForeign(p)?'rgba(80,160,255,.2)':'rgba(255,255,255,.07)'};border-radius:7px;padding:5px 10px;font-size:12px;display:flex;align-items:center;gap:6px;">
                 <span>${flag(p)}</span>
-                <span style="font-weight:600;">${p}</span>
-                ${isForeign(p)?'<span style="font-size:8px;color:var(--blue);">✈</span>':''}
-                ${isLog?'<span style="font-size:8px;color:#ff9f50;">🔄</span>':''}
-                ${price?`<span style="font-size:8px;color:var(--gold);font-family:'Orbitron',monospace;">₹${price}</span>`:''}
+                <span style="font-weight:600;flex:1;">${p}</span>
+                ${isForeign(p)?'<span style="font-size:9px;color:var(--blue);">✈</span>':''}
+                ${isTraded?'<span style="font-size:9px;color:#ff9f50;">🔄</span>':''}
+                ${price?`<span style="font-size:9px;color:var(--gold);font-family:'Orbitron',monospace;">₹${price}</span>`:''}
+                <button onclick="quickRemovePlayer('${id}','${safeP}')" style="background:rgba(255,68,68,.15);border:1px solid rgba(255,68,68,.3);color:var(--red);border-radius:5px;padding:2px 7px;font-size:10px;cursor:pointer;letter-spacing:1px;font-family:'Rajdhani',sans-serif;font-weight:700;">✕ REMOVE</button>
               </div>`;
             }).join('')}
           </div>
@@ -1804,6 +1809,34 @@ function renderAllSquadsPanel(){
 
   html += '</div>';
   el.innerHTML = html;
+}
+
+// Quick remove from All Squads panel
+async function quickRemovePlayer(teamId, playerName){
+  playerName = playerName.replace(/&apos;/g,"'");
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  const team = teamsData[teamId]||{};
+  const teamName = team.name||teamId;
+  if(!confirm(`Remove ${playerName} from ${teamName}?\nPurse will NOT be auto-refunded. This will be logged.`)) return;
+  const newPlayers = (team.players||[]).filter(p=>p!==playerName);
+  const newPrices = {...(team.playerPrices||{})};
+  const removedPrice = newPrices[playerName];
+  delete newPrices[playerName];
+  const newSquadSize = newPlayers.length;
+  const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
+  const playerMeta = getPlayerMeta(playerName);
+  if(DEMO()){
+    teamsData[teamId].players = newPlayers;
+    teamsData[teamId].playerPrices = newPrices;
+    refreshAll();
+  } else {
+    await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices});
+  }
+  addConsoleLog('remove',
+    `${flag(playerName)} ${playerName} removed from ${teamName} by Admin`,
+    `${playerMeta}${isForeign(playerName)?' · ✈ Foreign':' · 🇮🇳 Domestic'} · Was bought at: ${removedPrice?'₹'+removedPrice:'unknown'} · Purse NOT refunded · Squad now: ${newSquadSize}/${MAX_SQUAD} · Foreign: ${newForeignCount}/${MAX_FOREIGN}`
+  );
+  toast(playerName+' removed from '+teamName,'red');
 }
 
 function toggleSet(id){document.getElementById(`card-${id}`).classList.toggle('open');}
