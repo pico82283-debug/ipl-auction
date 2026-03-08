@@ -1242,7 +1242,7 @@ async function performSell(winTeam,winPrice){
   } else {
     const t=teamsData[winTeam]||{};
     const newPlayers=[...(t.players||[]),player];
-    const newPrices={...(t.playerPrices||{}),[player]:winPrice.toFixed(2)};
+    const newPrices={...(t.playerPrices||{}),[fbKey(player)]:winPrice.toFixed(2)};
     const squadSize=newPlayers.length;
     const foreignCount=newPlayers.filter(p=>isForeign(p)).length;
 
@@ -1873,7 +1873,7 @@ function renderAllSquadsPanel(){
           <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:5px;">${roleIcon[role]} ${role.toUpperCase()}</div>
           <div style="display:flex;flex-direction:column;gap:4px;">
             ${arr.map(p=>{
-              const price = (team.playerPrices||{})[p];
+              const price = getPriceFromPrices(team.playerPrices||{},p);
               const isTraded = (auctionState.soldLog||[]).find(e=>e.player===p&&e.traded);
               const safeP = p.replace(/'/g,"&apos;");
               return `<div style="background:var(--surface);border:1px solid ${isForeign(p)?'rgba(80,160,255,.2)':'rgba(255,255,255,.07)'};border-radius:7px;padding:5px 10px;font-size:12px;display:flex;align-items:center;gap:6px;">
@@ -2010,13 +2010,26 @@ async function adminRepairSquads(){
       const team = teams[entry.team];
       if(!team) return;
       if(!team.players.includes(entry.player)){
-        // Player is in soldLog for this team but missing from squad — add them back
         team.players.push(entry.player);
-        if(entry.price) team.playerPrices[entry.player] = entry.price;
+        // Use safe Firebase key (no dots/special chars)
+        if(entry.price) team.playerPrices[fbKey(entry.player)] = entry.price;
         updates['/teams/'+entry.team+'/players'] = team.players;
         updates['/teams/'+entry.team+'/playerPrices'] = team.playerPrices;
         repairCount++;
         addConsoleLog('system', `🔧 Repaired: ${entry.player} restored to ${team.name||entry.team}`, `Player was in soldLog but missing from squad — auto-fixed`);
+      }
+    });
+
+    // Also sanitize ALL existing playerPrices keys across all teams
+    Object.keys(teams).forEach(tid=>{
+      const prices = teams[tid].playerPrices||{};
+      const hasDot = Object.keys(prices).some(k=>k.includes('.'));
+      if(hasDot){
+        const safePrices = {};
+        Object.entries(prices).forEach(([k,v])=>{ safePrices[fbKey(fbKeyDecode(k))]=v; });
+        teams[tid].playerPrices = safePrices;
+        updates['/teams/'+tid+'/playerPrices'] = safePrices;
+        repairCount++;
       }
     });
 
@@ -2034,6 +2047,25 @@ async function adminRepairSquads(){
     toast('⚠️ Repair failed: '+e.message,'red');
     console.error('adminRepairSquads error:',e);
   }
+}
+
+
+// Sanitize player name for use as Firebase key (no . # $ / [ ])
+function fbKey(name){ return name.replace(/\./g,'%2E').replace(/#/g,'%23').replace(/\$/g,'%24').replace(/\//g,'%2F').replace(/\[/g,'%5B').replace(/\]/g,'%5D'); }
+function fbKeyDecode(key){ return key.replace(/%2E/g,'.').replace(/%23/g,'#').replace(/%24/g,'$').replace(/%2F/g,'/').replace(/%5B/g,'[').replace(/%5D/g,']'); }
+
+// Safe playerPrices getter/setter
+function getPriceFromPrices(prices, player){ return prices[player] || prices[fbKey(player)] || null; }
+function buildSafePrices(players, prices){
+  const safe = {};
+  players.forEach(p=>{ const v = getPriceFromPrices(prices,p); if(v) safe[fbKey(p)]=v; });
+  return safe;
+}
+function readSafePrices(prices){
+  // Decode all keys back to player names
+  const decoded = {};
+  Object.entries(prices||{}).forEach(([k,v])=>{ decoded[fbKeyDecode(k)]=v; });
+  return decoded;
 }
 
 function toggleSet(id){document.getElementById(`card-${id}`).classList.toggle('open');}
@@ -2134,7 +2166,7 @@ function renderSquadManager(){
     // Current squad with remove buttons
     if(players.length){
       players.forEach(p=>{
-        const price = (team.playerPrices||{})[p];
+        const price = getPriceFromPrices(team.playerPrices||{},p);
         const safeP = p.replace(/'/g,'&apos;');
         html+=`<div class="admin-player-row">
           <span style="font-size:13px;">${flag(p)}</span>
@@ -2231,7 +2263,7 @@ async function adminAddPlayer(teamId){
   if(players.length>=MAX_SQUAD){ toast(teamName+' squad is full (25/25)','red'); return; }
   if(isForeign(player)&&foreignCount>=MAX_FOREIGN){ toast('Foreign limit reached for '+teamName+' (8/8)','red'); return; }
   const newPlayers = [...players, player];
-  const newPrices = {...(team.playerPrices||{}), [player]: price.toFixed(2)};
+  const newPrices = {...(team.playerPrices||{}), [fbKey(player)]: price.toFixed(2)};
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
   const playerMeta = getPlayerMeta(player);
