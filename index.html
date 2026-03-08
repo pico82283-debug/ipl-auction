@@ -2006,25 +2006,37 @@ async function adminRepairSquads(){
     });
 
     // Cross-check soldLog — make sure every sold player is in the right team
-    soldLog.filter(e=>e.sold&&e.team&&e.player).forEach(entry=>{
+    // Build latest status map (last entry per player wins)
+    const latestSold = {};
+    soldLog.forEach(e=>{ if(e.player) latestSold[e.player]=e; });
+
+    Object.values(latestSold).filter(e=>e.sold&&e.team).forEach(entry=>{
       const team = teams[entry.team];
       if(!team) return;
+      if(!team.players) team.players=[];
+      if(!team.playerPrices) team.playerPrices={};
       if(!team.players.includes(entry.player)){
         team.players.push(entry.player);
-        // Use safe Firebase key (no dots/special chars)
-        if(entry.price) team.playerPrices[fbKey(entry.player)] = entry.price;
-        updates['/teams/'+entry.team+'/players'] = team.players;
-        updates['/teams/'+entry.team+'/playerPrices'] = team.playerPrices;
         repairCount++;
         addConsoleLog('system', `🔧 Repaired: ${entry.player} restored to ${team.name||entry.team}`, `Player was in soldLog but missing from squad — auto-fixed`);
       }
+      // Always ensure price is stored with safe key
+      if(entry.price){
+        team.playerPrices[fbKey(entry.player)] = entry.price;
+        // Remove old dotted key if exists
+        if(team.playerPrices[entry.player] !== undefined && entry.player !== fbKey(entry.player)){
+          delete team.playerPrices[entry.player];
+        }
+      }
+      updates['/teams/'+entry.team+'/players'] = team.players;
+      updates['/teams/'+entry.team+'/playerPrices'] = team.playerPrices;
     });
 
-    // Also sanitize ALL existing playerPrices keys across all teams
+    // Sanitize ALL existing playerPrices keys across all teams (fix dots in keys)
     Object.keys(teams).forEach(tid=>{
       const prices = teams[tid].playerPrices||{};
-      const hasDot = Object.keys(prices).some(k=>k.includes('.'));
-      if(hasDot){
+      const hasBadKey = Object.keys(prices).some(k=>k!==fbKey(k));
+      if(hasBadKey){
         const safePrices = {};
         Object.entries(prices).forEach(([k,v])=>{ safePrices[fbKey(fbKeyDecode(k))]=v; });
         teams[tid].playerPrices = safePrices;
