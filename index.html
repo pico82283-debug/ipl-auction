@@ -414,6 +414,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
             <button class="admin-btn btn-blue" id="pause-btn" onclick="adminTogglePause()">⏸ PAUSE</button>
             <button class="admin-btn btn-gray" onclick="adminReset()">🔄 RESET BIDS</button>
             <button class="admin-btn" style="background:rgba(80,160,255,.15);border:1px solid rgba(80,160,255,.3);color:var(--blue);" onclick="adminForceSync()">🔃 FORCE SYNC</button>
+            <button class="admin-btn" style="background:rgba(50,220,150,.1);border:1px solid rgba(50,220,150,.3);color:var(--green);" onclick="adminRepairSquads()">🔧 REPAIR SQUADS</button>
             <button class="admin-btn" style="background:rgba(255,68,68,.15);border:1px solid rgba(255,68,68,.4);color:var(--red);margin-top:8px;" onclick="adminFullReset()">⚠️ FULL SYSTEM RESET</button>
           </div>
         </div>
@@ -700,15 +701,27 @@ function setupFirebaseListeners(){
   const tOff=tRef.on('value',snap=>{
     const fresh=snap.val()||{};
     // Deep-merge to ensure players arrays and playerPrices are never lost
+    const repairUpdates={};
     Object.keys(fresh).forEach(id=>{
       // Firebase sometimes converts arrays to objects — always force to array
       if(!fresh[id].players) fresh[id].players=[];
-      else if(!Array.isArray(fresh[id].players)) fresh[id].players=Object.values(fresh[id].players);
+      else if(!Array.isArray(fresh[id].players)){
+        fresh[id].players=Object.values(fresh[id].players);
+        // Auto-repair in Firebase so everyone sees correct data
+        if(isAdmin) repairUpdates['/teams/'+id+'/players']=fresh[id].players;
+      }
       if(!fresh[id].playerPrices) fresh[id].playerPrices={};
-      else if(Array.isArray(fresh[id].playerPrices)) fresh[id].playerPrices={};
+      else if(Array.isArray(fresh[id].playerPrices)){
+        fresh[id].playerPrices={};
+        if(isAdmin) repairUpdates['/teams/'+id+'/playerPrices']={};
+      }
       if(fresh[id].purse===undefined) fresh[id].purse=TOTAL_PURSE;
     });
     teamsData=fresh;
+    // If admin detected corruption, silently repair Firebase
+    if(isAdmin && Object.keys(repairUpdates).length){
+      db.ref('/').update(repairUpdates).catch(e=>console.error('Auto-repair failed:',e));
+    }
     updateHeaderUser();
     renderTeamsOverview();
     renderBidsTable();
@@ -1916,19 +1929,109 @@ async function adminForceSync(){
   if(!isAdmin){ toast('Access denied','red'); return; }
   if(DEMO()){ refreshAll(); toast('Synced (demo mode)','green'); return; }
   try{
-    toast('Syncing...','green');
+    toast('Syncing & repairing data...','green');
     const [aSnap, tSnap] = await Promise.all([
       db.ref('/auction').get(),
       db.ref('/teams').get()
     ]);
-    if(aSnap.exists()) auctionState = aSnap.val()||{status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
-    if(tSnap.exists()) teamsData = tSnap.val()||{};
+    if(aSnap.exists()){
+      auctionState = aSnap.val()||{status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
+      if(auctionState.soldLog && !Array.isArray(auctionState.soldLog))
+        auctionState.soldLog = Object.values(auctionState.soldLog);
+    }
+    if(tSnap.exists()){
+      const fresh = tSnap.val()||{};
+      const repairUpdates = {};
+      let needsRepair = false;
+      Object.keys(fresh).forEach(tid=>{
+        const t = fresh[tid];
+        // Fix players array
+        if(t.players && !Array.isArray(t.players)){
+          fresh[tid].players = Object.values(t.players);
+          repairUpdates['/teams/'+tid+'/players'] = fresh[tid].players;
+          needsRepair = true;
+        }
+        if(!fresh[tid].players) fresh[tid].players = [];
+        // Fix playerPrices
+        if(t.playerPrices && Array.isArray(t.playerPrices)){
+          fresh[tid].playerPrices = {};
+          repairUpdates['/teams/'+tid+'/playerPrices'] = {};
+          needsRepair = true;
+        }
+        if(!fresh[tid].playerPrices) fresh[tid].playerPrices = {};
+        if(fresh[tid].purse === undefined) fresh[tid].purse = TOTAL_PURSE;
+      });
+      teamsData = fresh;
+      // Write repairs back to Firebase if needed
+      if(needsRepair && Object.keys(repairUpdates).length){
+        await db.ref('/').update(repairUpdates);
+        addConsoleLog('system','🔧 Squad data repaired by Force Sync','Firebase array/object corruption fixed automatically');
+      }
+    }
     refreshAll();
-    addConsoleLog('system','🔃 Force sync performed by Admin','All data re-fetched from Firebase');
-    toast('✅ Sync complete — all data refreshed!','green');
+    addConsoleLog('system','🔃 Force sync performed by Admin','All data re-fetched and repaired from Firebase');
+    toast('✅ Sync & repair complete!','green');
   } catch(e){
     toast('⚠️ Sync failed — check internet connection','red');
     console.error('forceSync error:', e);
+  }
+}
+
+
+// ═══════════════════════ REPAIR SQUADS ═══════════════════════
+async function adminRepairSquads(){
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  if(DEMO()){ toast('Not available in demo mode','red'); return; }
+  toast('🔧 Checking squads...','green');
+  try{
+    const [tSnap, aSnap] = await Promise.all([db.ref('/teams').get(), db.ref('/auction').get()]);
+    if(!tSnap.exists()){ toast('No team data found','red'); return; }
+    const teams = tSnap.val()||{};
+    const auction = aSnap.val()||{};
+    const soldLog = auction.soldLog ? (Array.isArray(auction.soldLog)?auction.soldLog:Object.values(auction.soldLog)) : [];
+    
+    const updates = {};
+    let repairCount = 0;
+
+    // Fix arrays first
+    Object.keys(teams).forEach(tid=>{
+      if(teams[tid].players && !Array.isArray(teams[tid].players)){
+        teams[tid].players = Object.values(teams[tid].players);
+        updates['/teams/'+tid+'/players'] = teams[tid].players;
+        repairCount++;
+      }
+      if(!teams[tid].players) teams[tid].players = [];
+      if(!teams[tid].playerPrices) teams[tid].playerPrices = {};
+    });
+
+    // Cross-check soldLog — make sure every sold player is in the right team
+    soldLog.filter(e=>e.sold&&e.team&&e.player).forEach(entry=>{
+      const team = teams[entry.team];
+      if(!team) return;
+      if(!team.players.includes(entry.player)){
+        // Player is in soldLog for this team but missing from squad — add them back
+        team.players.push(entry.player);
+        if(entry.price) team.playerPrices[entry.player] = entry.price;
+        updates['/teams/'+entry.team+'/players'] = team.players;
+        updates['/teams/'+entry.team+'/playerPrices'] = team.playerPrices;
+        repairCount++;
+        addConsoleLog('system', `🔧 Repaired: ${entry.player} restored to ${team.name||entry.team}`, `Player was in soldLog but missing from squad — auto-fixed`);
+      }
+    });
+
+    if(Object.keys(updates).length){
+      await db.ref('/').update(updates);
+      toast(`✅ Repaired ${repairCount} issue(s)! Squad data fixed.`,'green');
+    } else {
+      toast('✅ All squads look correct — no repairs needed!','green');
+    }
+    // Force refresh
+    const newTSnap = await db.ref('/teams').get();
+    if(newTSnap.exists()) teamsData = newTSnap.val()||{};
+    refreshAll();
+  } catch(e){
+    toast('⚠️ Repair failed — check internet','red');
+    console.error('adminRepairSquads error:',e);
   }
 }
 
