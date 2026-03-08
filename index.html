@@ -1063,7 +1063,7 @@ function renderMyTeam(){
       <div class="section-title" style="margin-bottom:12px;">🏏 MY SQUAD (${players.length} players)</div>`;
     players.forEach((p,i)=>{
       const isFore=isForeign(p);
-      const price=prices[p];
+      const price=getPriceFromPrices(prices,p);
       html+=`<div class="squad-player-chip">
         <span class="squad-player-no">${String(i+1).padStart(2,'0')}</span>
         <span style="font-size:14px;">${flag(p)}</span>
@@ -1904,8 +1904,8 @@ async function quickRemovePlayer(teamId, playerName){
   if(!confirm(`Remove ${playerName} from ${teamName}?\nPurse will NOT be auto-refunded. This will be logged.`)) return;
   const newPlayers = (team.players||[]).filter(p=>p!==playerName);
   const newPrices = {...(team.playerPrices||{})};
-  const removedPrice = newPrices[playerName];
-  delete newPrices[playerName];
+  const removedPrice = getPriceFromPrices(newPrices, playerName);
+  delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
   const playerMeta = getPlayerMeta(playerName);
@@ -2312,8 +2312,8 @@ async function adminRemovePlayer(teamId, playerName){
   const players = team.players||[];
   const newPlayers = players.filter(p=>p!==playerName);
   const newPrices = {...(team.playerPrices||{})};
-  const removedPrice = newPrices[playerName];
-  delete newPrices[playerName];
+  const removedPrice = getPriceFromPrices(newPrices, playerName);
+  delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
   const teamName = team.name||teamId;
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
@@ -2521,7 +2521,7 @@ async function respondTrade(tradeId,response){
     fromTeam.players=(fromTeam.players||[]).filter(p=>p!==t.offerPlayer); fromTeam.players.push(t.wantPlayer);
     toTeam.players=(toTeam.players||[]).filter(p=>p!==t.wantPlayer); toTeam.players.push(t.offerPlayer);
     const fp={...(fromTeam.playerPrices||{})}, tp={...(toTeam.playerPrices||{})};
-    const fPrice=fp[t.offerPlayer], tPrice=tp[t.wantPlayer];
+    const fPrice=getPriceFromPrices(fp,t.offerPlayer), tPrice=getPriceFromPrices(tp,t.wantPlayer);
     delete fp[t.offerPlayer]; delete tp[t.wantPlayer];
     if(tPrice) fp[t.wantPlayer]=tPrice; if(fPrice) tp[t.offerPlayer]=fPrice;
     fromTeam.playerPrices=fp; toTeam.playerPrices=tp;
