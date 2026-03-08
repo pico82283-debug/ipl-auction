@@ -409,10 +409,11 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
           </div>
           <div class="admin-box">
             <div class="admin-box-title">Auction Controls</div>
-            <button class="admin-btn btn-green" onclick="adminSell()">✅ SELL — Accept Highest Bid</button>
+            <button class="admin-btn btn-green" id="sell-btn" onclick="adminSell()">✅ SELL — Accept Highest Bid</button>
             <button class="admin-btn btn-red" onclick="adminUnsold()">❌ MARK UNSOLD</button>
             <button class="admin-btn btn-blue" id="pause-btn" onclick="adminTogglePause()">⏸ PAUSE</button>
             <button class="admin-btn btn-gray" onclick="adminReset()">🔄 RESET BIDS</button>
+            <button class="admin-btn" style="background:rgba(80,160,255,.15);border:1px solid rgba(80,160,255,.3);color:var(--blue);" onclick="adminForceSync()">🔃 FORCE SYNC</button>
             <button class="admin-btn" style="background:rgba(255,68,68,.15);border:1px solid rgba(255,68,68,.4);color:var(--red);margin-top:8px;" onclick="adminFullReset()">⚠️ FULL SYSTEM RESET</button>
           </div>
         </div>
@@ -587,6 +588,7 @@ const DEFAULT_TEAMS = {
 let db=null, currentUser=null, isAdmin=false;
 let teamsData={}, auctionState={status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
 let listeners=[], timerInterval=null, localTimerRunning=false;
+let sellInProgress=false; // lock to prevent double-sell
 const DEMO = ()=>FIREBASE_CONFIG.apiKey==='YOUR_API_KEY';
 
 // ═══════════════════════ FIREBASE ═══════════════════════
@@ -605,7 +607,7 @@ async function doLogin(){
   const err=document.getElementById('login-err');
   err.textContent='';
   if(!id||!pass){err.textContent='Please enter ID and password.';return;}
-  if(id===ADMIN_CREDS.id&&pass===ADMIN_CREDS.pass){currentUser='admin';isAdmin=true;launchApp();return;}
+  if(id===ADMIN_CREDS.id&&pass===ADMIN_CREDS.pass){currentUser='admin';isAdmin=true;if(!DEMO()&&!db){if(!initFirebase()){err.textContent='Database connection failed.';currentUser=null;isAdmin=false;return;}}launchApp();return;}
   if(DEMO()){
     if(DEFAULT_TEAMS[id]&&DEFAULT_TEAMS[id].pass===pass){currentUser=id;isAdmin=false;launchApp();return;}
     err.textContent='Invalid credentials.';return;
@@ -621,7 +623,7 @@ async function doLogin(){
 function doLogout(){
   stopTimer();
   listeners.forEach(fn=>fn()); listeners=[];
-  currentUser=null; isAdmin=false;
+  currentUser=null; isAdmin=false; sellInProgress=false;
   document.getElementById('admin-panel').style.display='none';
   document.getElementById('admin-trade-box').style.display='none';
   document.getElementById('reset-modal').style.display='none';
@@ -645,7 +647,7 @@ function launchApp(){
     tradesData={}; tradeWindowOpen=false; auctionLive=false;
     // consoleLogs intentionally NOT reset — persists for the full session
   } else {
-    if(!db) initFirebase();
+    if(!db && !initFirebase()){toast('Database connection failed','red');return;}
     setupFirebaseListeners();
     setupTradeListener();
     setupConsoleListener();
@@ -657,8 +659,8 @@ function launchApp(){
     document.getElementById('myteam-tab-btn').style.display='none';
     document.getElementById('trade-tab-btn').style.display='none';
     document.getElementById('squad-manager-section').style.display='block';
-  document.getElementById('manage-teams-section').style.display='block';
-  document.getElementById('allsquads-tab-btn').style.display='';
+    document.getElementById('manage-teams-section').style.display='block';
+    document.getElementById('allsquads-tab-btn').style.display='';
     renderManageTeams();
     renderSquadManager();
   }
@@ -696,13 +698,22 @@ function refreshAll(){
 function setupFirebaseListeners(){
   const tRef=db.ref('/teams');
   const tOff=tRef.on('value',snap=>{
-    teamsData=snap.val()||{};
+    const fresh=snap.val()||{};
+    // Deep-merge to ensure players arrays and playerPrices are never lost
+    Object.keys(fresh).forEach(id=>{
+      if(!fresh[id].players) fresh[id].players=[];
+      if(!fresh[id].playerPrices) fresh[id].playerPrices={};
+      if(fresh[id].purse===undefined) fresh[id].purse=TOTAL_PURSE;
+    });
+    teamsData=fresh;
     updateHeaderUser();
     renderTeamsOverview();
     renderBidsTable();
     renderMyTeam();
-    if(isAdmin) renderManageTeams();
+    if(isAdmin){ renderManageTeams(); renderAllSquadsPanel(); renderSquadManager(); }
     updateMyWallet();
+    // Update sold/unsold counts on team data change too
+    document.getElementById('sold-count').textContent=(auctionState.soldLog||[]).filter(s=>s.sold).length;
   });
   listeners.push(()=>tRef.off('value',tOff));
 
@@ -710,9 +721,25 @@ function setupFirebaseListeners(){
   const aOff=aRef.on('value',snap=>{
     const prev=auctionState;
     auctionState=snap.val()||{status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
-    // If new player announced or bid placed → manage timer
-    handleTimerSync(prev);
-    refreshAll();
+    // If auction just went idle (player sold/unsold) force re-fetch teams to ensure squad & purse are in sync
+    if(prev.status==='live' && auctionState.status==='idle'){
+      db.ref('/teams').get().then(ts=>{
+        if(ts.exists()){
+          const fresh=ts.val()||{};
+          Object.keys(fresh).forEach(id=>{
+            if(!fresh[id].players) fresh[id].players=[];
+            if(!fresh[id].playerPrices) fresh[id].playerPrices={};
+            if(fresh[id].purse===undefined) fresh[id].purse=TOTAL_PURSE;
+          });
+          teamsData=fresh;
+        }
+        handleTimerSync(prev);
+        refreshAll();
+      }).catch(()=>{ handleTimerSync(prev); refreshAll(); });
+    } else {
+      handleTimerSync(prev);
+      refreshAll();
+    }
   });
   listeners.push(()=>aRef.off('value',aOff));
   setupConsoleListener();
@@ -1147,22 +1174,24 @@ async function adminAnnounce(){
 }
 
 async function adminSell(){
+  if(sellInProgress){toast('Sale already processing...','red');return;}
   const bids=auctionState.bids||{};
   const entries=Object.entries(bids).sort((a,b)=>b[1]-a[1]);
   if(!entries.length){toast('No bids placed yet!','red');return;}
   if(!auctionState.currentPlayer){toast('No player on auction','red');return;}
+  const btn=document.getElementById('sell-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ SELLING...';}
   await performSell(entries[0][0],entries[0][1]);
+  if(btn){btn.disabled=false;btn.textContent='✅ SELL';}
 }
 
 async function performSell(winTeam,winPrice){
+  if(sellInProgress){ toast('Sale already in progress...','red'); return; }
   const player=auctionState.currentPlayer;
   if(!player) return;
+  if(auctionState.status==='idle'){ toast('Player already sold or no auction active.','red'); return; }
+  sellInProgress=true;
   stopTimer();
-  document.getElementById('so-player').textContent=player;
-  document.getElementById('so-team').textContent=(teamsData[winTeam]?.name||winTeam).toUpperCase();
-  document.getElementById('so-price').textContent='₹'+winPrice.toFixed(2);
-  document.getElementById('sold-overlay').classList.add('show');
-  setTimeout(()=>document.getElementById('sold-overlay').classList.remove('show'),3500);
   const newLog=[...(auctionState.soldLog||[]),{player,team:winTeam,price:winPrice.toFixed(2),sold:true}];
   const teamName = teamsData[winTeam]?.name || winTeam.toUpperCase();
   const oldPurse = teamsData[winTeam]?.purse ?? TOTAL_PURSE;
@@ -1170,6 +1199,12 @@ async function performSell(winTeam,winPrice){
   const playerMeta = getPlayerMeta(player);
   const isFore = isForeign(player);
   if(DEMO()){
+    sellInProgress=false;
+    document.getElementById('so-player').textContent=player;
+    document.getElementById('so-team').textContent=(teamsData[winTeam]?.name||winTeam).toUpperCase();
+    document.getElementById('so-price').textContent='₹'+winPrice.toFixed(2);
+    document.getElementById('sold-overlay').classList.add('show');
+    setTimeout(()=>document.getElementById('sold-overlay').classList.remove('show'),3500);
     auctionState={...auctionState,currentPlayer:null,bids:{},status:'idle',soldLog:newLog,timerEnd:null};
     const t=teamsData[winTeam]||{...DEFAULT_TEAMS[winTeam]};
     t.purse=newPurse;
@@ -1186,17 +1221,47 @@ async function performSell(winTeam,winPrice){
     );
     refreshAll();
   } else {
-    await db.ref('/auction').update({currentPlayer:null,bids:{},status:'idle',soldLog:newLog,timerEnd:null});
     const t=teamsData[winTeam]||{};
     const newPlayers=[...(t.players||[]),player];
     const newPrices={...(t.playerPrices||{}),[player]:winPrice.toFixed(2)};
     const squadSize=newPlayers.length;
     const foreignCount=newPlayers.filter(p=>isForeign(p)).length;
-    await db.ref(`/teams/${winTeam}`).update({
-      purse:newPurse,
-      players:newPlayers,
-      playerPrices:newPrices
-    });
+
+    // Single atomic multi-path update — either ALL writes succeed or NONE do
+    const updates = {};
+    updates['/auction/currentPlayer'] = null;
+    updates['/auction/bids'] = {};
+    updates['/auction/status'] = 'idle';
+    updates['/auction/soldLog'] = newLog;
+    updates['/auction/timerEnd'] = null;
+    updates[`/teams/${winTeam}/purse`] = newPurse;
+    updates[`/teams/${winTeam}/players`] = newPlayers;
+    updates[`/teams/${winTeam}/playerPrices`] = newPrices;
+
+    let retries = 3;
+    while(retries > 0){
+      try{
+        await db.ref('/').update(updates);
+        sellInProgress=false;
+        // Show overlay ONLY after confirmed successful write
+        document.getElementById('so-player').textContent=player;
+        document.getElementById('so-team').textContent=(teamsData[winTeam]?.name||winTeam).toUpperCase();
+        document.getElementById('so-price').textContent='₹'+winPrice.toFixed(2);
+        document.getElementById('sold-overlay').classList.add('show');
+        setTimeout(()=>document.getElementById('sold-overlay').classList.remove('show'),3500);
+        break; // success
+      } catch(e){
+        retries--;
+        if(retries === 0){
+          sellInProgress=false;
+          toast('⚠️ Network error — retrying sale failed. Please check squads manually.','red');
+          console.error('performSell failed after 3 retries:', e);
+          return;
+        }
+        await new Promise(r=>setTimeout(r,1000)); // wait 1s before retry
+      }
+    }
+
     addConsoleLog('sold',
       `${flag(player)} ${player} → ${teamName}`,
       `Sold for ₹${winPrice.toFixed(2)} · ${playerMeta}${isFore?' · 🌍 Foreign':''} · Squad: ${squadSize}/${MAX_SQUAD} · Foreign: ${foreignCount}/${MAX_FOREIGN} · Purse left: ₹${newPurse.toFixed(2)}`
@@ -1839,6 +1904,28 @@ async function quickRemovePlayer(teamId, playerName){
   toast(playerName+' removed from '+teamName,'red');
 }
 
+
+// Force re-read all data from Firebase and refresh UI
+async function adminForceSync(){
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  if(DEMO()){ refreshAll(); toast('Synced (demo mode)','green'); return; }
+  try{
+    toast('Syncing...','green');
+    const [aSnap, tSnap] = await Promise.all([
+      db.ref('/auction').get(),
+      db.ref('/teams').get()
+    ]);
+    if(aSnap.exists()) auctionState = aSnap.val()||{status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
+    if(tSnap.exists()) teamsData = tSnap.val()||{};
+    refreshAll();
+    addConsoleLog('system','🔃 Force sync performed by Admin','All data re-fetched from Firebase');
+    toast('✅ Sync complete — all data refreshed!','green');
+  } catch(e){
+    toast('⚠️ Sync failed — check internet connection','red');
+    console.error('forceSync error:', e);
+  }
+}
+
 function toggleSet(id){document.getElementById(`card-${id}`).classList.toggle('open');}
 
 // ═══════════════════════ CONSOLE LOG ═══════════════════════
@@ -2030,12 +2117,21 @@ async function adminAddPlayer(teamId){
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
   const playerMeta = getPlayerMeta(player);
+  const oldPurse = team.purse ?? TOTAL_PURSE;
+  const newPurse = +((oldPurse) - price).toFixed(2);
   if(DEMO()){
     teamsData[teamId].players = newPlayers;
     teamsData[teamId].playerPrices = newPrices;
+    teamsData[teamId].purse = newPurse;
     refreshAll();
   } else {
-    await db.ref('/teams/'+teamId).update({ players: newPlayers, playerPrices: newPrices });
+    try{
+      await db.ref('/teams/'+teamId).update({ players: newPlayers, playerPrices: newPrices, purse: newPurse });
+    } catch(e){
+      toast('⚠️ Failed to add player — network error. Try again.','red');
+      console.error('adminAddPlayer failed:', e);
+      return;
+    }
   }
   addConsoleLog('add',
     `${flag(player)} ${player} manually added to ${teamName} by Admin`,
@@ -2064,7 +2160,13 @@ async function adminRemovePlayer(teamId, playerName){
     teamsData[teamId].playerPrices = newPrices;
     refreshAll();
   } else {
-    await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices});
+    try{
+      await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices});
+    } catch(e){
+      toast('⚠️ Remove failed — network error. Try again.','red');
+      console.error('adminRemovePlayer failed:',e);
+      return;
+    }
   }
   addConsoleLog('remove',
     `${flag(playerName)} ${playerName} removed from ${teamName} by Admin`,
@@ -2278,10 +2380,21 @@ async function respondTrade(tradeId,response){
       auctionState={...auctionState, soldLog:newLog};
       renderTradePanel(); renderTeamsOverview(); renderMyTeam(); updateAdminTradePanel();
     } else {
-      await db.ref('/teams/'+t.from).update({players:fromTeam.players,playerPrices:fromTeam.playerPrices});
-      await db.ref('/teams/'+t.to).update({players:toTeam.players,playerPrices:toTeam.playerPrices});
-      await db.ref('/trades/'+tradeId+'/status').set('accepted');
-      await db.ref('/auction/soldLog').set(newLog);
+      // Single atomic update — all or nothing
+      const tradeUpdates = {};
+      tradeUpdates[`/teams/${t.from}/players`] = fromTeam.players;
+      tradeUpdates[`/teams/${t.from}/playerPrices`] = fromTeam.playerPrices;
+      tradeUpdates[`/teams/${t.to}/players`] = toTeam.players;
+      tradeUpdates[`/teams/${t.to}/playerPrices`] = toTeam.playerPrices;
+      tradeUpdates[`/trades/${tradeId}/status`] = 'accepted';
+      tradeUpdates['/auction/soldLog'] = newLog;
+      try{
+        await db.ref('/').update(tradeUpdates);
+      } catch(e){
+        toast('⚠️ Trade failed — network error. Try again.','red');
+        console.error('Trade update failed:', e);
+        return;
+      }
     }
     // Flash overlay
     document.querySelector('.sold-overlay-label').textContent='TRADED!';
