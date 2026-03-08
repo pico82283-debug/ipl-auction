@@ -701,8 +701,11 @@ function setupFirebaseListeners(){
     const fresh=snap.val()||{};
     // Deep-merge to ensure players arrays and playerPrices are never lost
     Object.keys(fresh).forEach(id=>{
+      // Firebase sometimes converts arrays to objects — always force to array
       if(!fresh[id].players) fresh[id].players=[];
+      else if(!Array.isArray(fresh[id].players)) fresh[id].players=Object.values(fresh[id].players);
       if(!fresh[id].playerPrices) fresh[id].playerPrices={};
+      else if(Array.isArray(fresh[id].playerPrices)) fresh[id].playerPrices={};
       if(fresh[id].purse===undefined) fresh[id].purse=TOTAL_PURSE;
     });
     teamsData=fresh;
@@ -728,6 +731,9 @@ function setupFirebaseListeners(){
           const fresh=ts.val()||{};
           Object.keys(fresh).forEach(id=>{
             if(!fresh[id].players) fresh[id].players=[];
+            else if(!Array.isArray(fresh[id].players)) fresh[id].players=Object.values(fresh[id].players);
+            if(!fresh[id].playerPrices) fresh[id].playerPrices={};
+            else if(Array.isArray(fresh[id].playerPrices)) fresh[id].playerPrices={};
             if(!fresh[id].playerPrices) fresh[id].playerPrices={};
             if(fresh[id].purse===undefined) fresh[id].purse=TOTAL_PURSE;
           });
@@ -2115,6 +2121,9 @@ async function adminAddPlayer(teamId){
   const players = team.players||[];
   const foreignCount = players.filter(p=>isForeign(p)).length;
   if(players.includes(player)){ toast(player+' is already in '+teamName,'red'); return; }
+  // Block if player already in another team
+  const otherOwner = Object.entries(teamsData).find(([tid,t])=>tid!==teamId&&(t.players||[]).includes(player));
+  if(otherOwner){ toast(player+' is already in '+(otherOwner[1].name||otherOwner[0])+'. Cannot add to two teams!','red'); return; }
   if(players.length>=MAX_SQUAD){ toast(teamName+' squad is full (25/25)','red'); return; }
   if(isForeign(player)&&foreignCount>=MAX_FOREIGN){ toast('Foreign limit reached for '+teamName+' (8/8)','red'); return; }
   const newPlayers = [...players, player];
@@ -2130,11 +2139,24 @@ async function adminAddPlayer(teamId){
     teamsData[teamId].purse = newPurse;
     refreshAll();
   } else {
-    try{
-      await db.ref('/teams/'+teamId).update({ players: newPlayers, playerPrices: newPrices, purse: newPurse });
-    } catch(e){
-      toast('⚠️ Failed to add player — network error. Try again.','red');
-      console.error('adminAddPlayer failed:', e);
+    // Use multi-path atomic update with 3 retries
+    const updates = {};
+    updates[`/teams/${teamId}/players`] = newPlayers;
+    updates[`/teams/${teamId}/playerPrices`] = newPrices;
+    updates[`/teams/${teamId}/purse`] = newPurse;
+    let success = false;
+    for(let attempt=1; attempt<=3; attempt++){
+      try{
+        await db.ref('/').update(updates);
+        success = true;
+        break;
+      } catch(e){
+        console.error(`adminAddPlayer attempt ${attempt} failed:`, e);
+        if(attempt < 3) await new Promise(r=>setTimeout(r,1000));
+      }
+    }
+    if(!success){
+      toast('⚠️ Failed after 3 attempts. Check your internet and try again.','red');
       return;
     }
   }
