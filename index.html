@@ -2077,18 +2077,23 @@ function populateAddPlayerList(teamId){
   if(!sel) return;
   sel.innerHTML = '<option value="">— Select Player —</option>';
   if(!catKey) return;
-  const allSoldPlayers = Object.values(teamsData).flatMap(t=>t.players||[]);
+  // Get players already in THIS team's squad (can't add duplicates)
+  const thisTeamPlayers = teamsData[teamId]?.players || [];
   const cat = PLAYER_DATA[catKey];
   cat.sets.forEach(set=>{
     const og = document.createElement('optgroup');
     og.label = set.name;
     set.players.forEach(p=>{
-      if(!allSoldPlayers.includes(p)){
-        const o = document.createElement('option');
-        o.value = p;
-        o.textContent = p + (isForeign(p) ? ' 🌍' : ' 🇮🇳');
-        og.appendChild(o);
-      }
+      // Only block if already in THIS team — admin can add from any other team or unsold pool
+      const alreadyInTeam = thisTeamPlayers.includes(p);
+      const o = document.createElement('option');
+      o.value = p;
+      // Show which team owns the player if already sold elsewhere
+      const ownerTeam = Object.entries(teamsData).find(([tid,t])=>tid!==teamId&&(t.players||[]).includes(p));
+      const ownerLabel = ownerTeam ? ` (${ownerTeam[1].name||ownerTeam[0]})` : '';
+      o.textContent = p + (isForeign(p) ? ' ✈' : '') + ownerLabel;
+      if(alreadyInTeam) o.disabled = true;
+      og.appendChild(o);
     });
     if(og.children.length) sel.appendChild(og);
   });
