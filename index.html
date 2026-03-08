@@ -1982,6 +1982,7 @@ async function adminForceSync(){
 async function adminRepairSquads(){
   if(!isAdmin){ toast('Access denied','red'); return; }
   if(DEMO()){ toast('Not available in demo mode','red'); return; }
+  if(!db){ if(!initFirebase()){ toast('Database not connected','red'); return; } }
   toast('🔧 Checking squads...','green');
   try{
     const [tSnap, aSnap] = await Promise.all([db.ref('/teams').get(), db.ref('/auction').get()]);
@@ -2030,7 +2031,7 @@ async function adminRepairSquads(){
     if(newTSnap.exists()) teamsData = newTSnap.val()||{};
     refreshAll();
   } catch(e){
-    toast('⚠️ Repair failed — check internet','red');
+    toast('⚠️ Repair failed: '+e.message,'red');
     console.error('adminRepairSquads error:',e);
   }
 }
