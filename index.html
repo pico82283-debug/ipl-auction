@@ -364,6 +364,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="display:none;color:#a050ff;">👁 ALL SQUADS</button>
     <button class="tab" style="color:#32dc96;" data-tab="sold-players" onclick="showTab('sold-players')" id="sold-players-tab-btn">✅ SOLD <span class="count" id="c-sold-players" style="background:#32dc96;">0</span></button>
     <button class="tab" style="color:#ffd860;" data-tab="sold-log" onclick="showTab('sold-log')" id="sold-log-tab-btn">🏅 SOLD LOG</button>
+    <button class="tab" style="color:#ff9f50;" data-tab="injured" onclick="showTab('injured')" id="injured-tab-btn">🚑 INJURED <span class="count" id="c-injured" style="background:#ff9f50;">0</span></button>
     <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
     <button class="tab" data-tab="pace" onclick="showTab('pace')">🔥 Pace <span class="count" id="c-pace"></span></button>
     <button class="tab" data-tab="spin" onclick="showTab('spin')">🌀 Spin <span class="count" id="c-spin"></span></button>
@@ -517,6 +518,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <div id="panel-wk" class="category-panel"></div>
     <div id="panel-ar" class="category-panel"></div>
     <!-- UNSOLD PANEL -->
+    <div id="panel-injured" class="category-panel"></div>
     <div id="panel-unsold" class="category-panel"></div>
     <!-- SOLD PLAYERS PANEL -->
     <div id="panel-sold-players" class="category-panel"></div>
@@ -534,6 +536,21 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
   </div>
 </div>
 
+
+
+<!-- INJURED / RE-AUCTION MODAL -->
+<div id="remove-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);align-items:center;justify-content:center;">
+  <div style="background:#12121c;border:1px solid rgba(255,159,80,.4);border-radius:18px;padding:32px;max-width:420px;width:90%;text-align:center;">
+    <div style="font-size:32px;margin-bottom:10px;">🚑</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--gold);margin-bottom:6px;" id="remove-modal-title">REMOVE PLAYER</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px;" id="remove-modal-sub">Choose what happens to this player</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button onclick="confirmRemove('injured')" style="background:rgba(255,159,80,.15);border:1px solid rgba(255,159,80,.4);color:#ff9f50;border-radius:10px;padding:14px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;">🚑 MARK AS INJURED<br><span style="font-size:11px;font-family:'Rajdhani',sans-serif;letter-spacing:1px;opacity:.7;">Remove from squad, goes to Injured tab, not available for auction</span></button>
+      <button onclick="confirmRemove('reauction')" style="background:rgba(50,220,150,.1);border:1px solid rgba(50,220,150,.3);color:var(--green);border-radius:10px;padding:14px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;">🔄 RELEASE FOR RE-AUCTION<br><span style="font-size:11px;font-family:'Rajdhani',sans-serif;letter-spacing:1px;opacity:.7;">Remove from squad, player goes back to their category for bidding</span></button>
+      <button onclick="closeRemoveModal()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--muted);border-radius:10px;padding:11px;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;cursor:pointer;">CANCEL</button>
+    </div>
+  </div>
+</div>
 
 <!-- FULL RESET CONFIRM MODAL -->
 <div id="reset-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);align-items:center;justify-content:center;">
@@ -588,6 +605,8 @@ let db=null, currentUser=null, isAdmin=false;
 let teamsData={}, auctionState={status:'idle',currentPlayer:null,basePrice:0,bids:{},soldLog:[],timerEnd:null};
 let listeners=[], timerInterval=null, localTimerRunning=false;
 let sellInProgress=false; // lock to prevent double-sell
+let injuredPlayers=[]; // list of {name, team, price, role} objects
+let pendingRemove={teamId:null,playerName:null,source:null}; // for remove modal
 const DEMO = ()=>FIREBASE_CONFIG.apiKey==='YOUR_API_KEY';
 
 // ═══════════════════════ FIREBASE ═══════════════════════
@@ -626,6 +645,7 @@ function doLogout(){
   document.getElementById('admin-panel').style.display='none';
   document.getElementById('admin-trade-box').style.display='none';
   document.getElementById('reset-modal').style.display='none';
+  document.getElementById('remove-modal').style.display='none';
   document.getElementById('manage-teams-section').style.display='none';
   document.getElementById('allsquads-tab-btn').style.display='none';
   document.getElementById('squad-manager-section') && (document.getElementById('squad-manager-section').style.display='none');
@@ -695,11 +715,21 @@ function refreshAll(){
   Object.keys(PLAYER_DATA).forEach(renderCategoryPanel);
   updateUnsoldPoolOption();
   if(isAdmin) renderAllSquadsPanel();
+  renderInjuredPanel();
+  document.getElementById('c-injured').textContent=injuredPlayers.length||'';
   document.getElementById('sold-count').textContent=(auctionState.soldLog||[]).filter(s=>s.sold).length;
 }
 
 // ═══════════════════════ FIREBASE LISTENERS ═══════════════════════
 function setupFirebaseListeners(){
+  // Injured players listener
+  const injRef=db.ref('/injured');
+  const injOff=injRef.on('value',snap=>{
+    injuredPlayers=snap.exists()?(Array.isArray(snap.val())?snap.val():Object.values(snap.val())):[]; 
+    renderInjuredPanel();
+    document.getElementById('c-injured').textContent=injuredPlayers.length||'';
+  });
+  listeners.push(()=>injRef.off('value',injOff));
   const tRef=db.ref('/teams');
   const tOff=tRef.on('value',snap=>{
     const fresh=snap.val()||{};
@@ -1382,6 +1412,7 @@ function showTab(key){
   if(key==='console') renderConsoleLogs();
   if(key==='unsold') renderUnsoldPanel();
   if(key==='sold-players') renderSoldPlayersPanel();
+  if(key==='injured') renderInjuredPanel();
   if(key==='sold-log') renderSoldLog();
   if(key==='allsquads') renderAllSquadsPanel();
 }
@@ -1905,13 +1936,8 @@ async function quickRemovePlayer(teamId, playerName){
   if(!isAdmin){ toast('Access denied','red'); return; }
   const team = teamsData[teamId]||{};
   const teamName = team.name||teamId;
-  const newPlayers = (team.players||[]).filter(p=>p!==playerName);
-  const newPrices = {...(team.playerPrices||{})};
-  const removedPrice = getPriceFromPrices(newPrices, playerName);
-  const refundAmt = removedPrice ? parseFloat(removedPrice) : 0;
-  const oldPurse = team.purse ?? TOTAL_PURSE;
-  const newPurse = +((oldPurse) + refundAmt).toFixed(2);
-  if(!confirm(`Remove ${playerName} from ${teamName}?\nBought at: ₹${refundAmt.toFixed(2)} — this will be refunded to their purse.\nThis action will be logged.`)) return;
+  pendingRemove._teamId=teamId; pendingRemove._playerName=playerName; pendingRemove.source='allsquads';
+  openRemoveModal(teamId, playerName, 'allsquads'); return;
   delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
@@ -2088,6 +2114,132 @@ function readSafePrices(prices){
   const decoded = {};
   Object.entries(prices||{}).forEach(([k,v])=>{ decoded[fbKeyDecode(k)]=v; });
   return decoded;
+}
+
+
+// ═══════════════════════ INJURED SYSTEM ═══════════════════════
+function openRemoveModal(teamId, playerName, source){
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  pendingRemove = {teamId, playerName, source};
+  const team = teamsData[teamId]||{};
+  const price = getPriceFromPrices(team.playerPrices||{}, playerName);
+  document.getElementById('remove-modal-title').textContent = playerName.toUpperCase();
+  document.getElementById('remove-modal-sub').textContent = 
+    `${team.name||teamId} · Bought at ₹${price||'?'} · Choose what happens next`;
+  document.getElementById('remove-modal').style.display='flex';
+}
+
+function closeRemoveModal(){
+  document.getElementById('remove-modal').style.display='none';
+  pendingRemove={teamId:null,playerName:null,source:null};
+}
+
+async function confirmRemove(action){
+  const tId = pendingRemove._teamId;
+  const pName = pendingRemove._playerName;
+  closeRemoveModal();
+  await executeRemove(tId, pName, action);
+}
+
+async function executeRemove(teamId, playerName, action){
+  if(!teamId||!playerName) return;
+  const team = teamsData[teamId]||{};
+  const teamName = team.name||teamId;
+  const newPlayers = (team.players||[]).filter(p=>p!==playerName);
+  const newPrices = {...(team.playerPrices||{})};
+  const removedPrice = getPriceFromPrices(newPrices, playerName);
+  const refundAmt = removedPrice ? parseFloat(removedPrice) : 0;
+  const oldPurse = team.purse ?? TOTAL_PURSE;
+  const newPurse = +((oldPurse) + refundAmt).toFixed(2);
+  delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
+  const newSquadSize = newPlayers.length;
+  const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
+  const playerMeta = getPlayerMeta(playerName);
+
+  if(DEMO()){
+    teamsData[teamId].players = newPlayers;
+    teamsData[teamId].playerPrices = newPrices;
+    teamsData[teamId].purse = newPurse;
+    if(action==='injured'){
+      injuredPlayers.push({name:playerName,team:teamId,teamName,price:removedPrice||'0',role:playerMeta});
+    }
+    refreshAll();
+  } else {
+    try{
+      const updates = {};
+      updates[`/teams/${teamId}/players`] = newPlayers;
+      updates[`/teams/${teamId}/playerPrices`] = newPrices;
+      updates[`/teams/${teamId}/purse`] = newPurse;
+      if(action==='injured'){
+        const newInjured = [...injuredPlayers, {name:playerName,team:teamId,teamName,price:removedPrice||'0',role:playerMeta}];
+        updates['/injured'] = newInjured;
+      }
+      await db.ref('/').update(updates);
+    } catch(e){
+      toast('Remove failed: '+e.message,'red'); return;
+    }
+  }
+
+  const actionLabel = action==='injured' ? '🚑 Marked as INJURED' : '🔄 Released for RE-AUCTION';
+  addConsoleLog('remove',
+    `${flag(playerName)} ${playerName} removed from ${teamName} by Admin`,
+    `${actionLabel} · Bought at ₹${refundAmt.toFixed(2)} · 💰 Refunded ₹${refundAmt.toFixed(2)} · Purse: ₹${oldPurse.toFixed(2)} → ₹${newPurse.toFixed(2)} · Squad now: ${newSquadSize}/${MAX_SQUAD}`
+  );
+  if(action==='injured'){
+    toast(`${playerName} marked injured & ₹${refundAmt.toFixed(2)} refunded`,'red');
+  } else {
+    toast(`${playerName} released for re-auction & ₹${refundAmt.toFixed(2)} refunded`,'green');
+  }
+}
+
+function renderInjuredPanel(){
+  const el = document.getElementById('panel-injured');
+  if(!el) return;
+  const count = injuredPlayers.length;
+  document.getElementById('c-injured').textContent = count||'';
+
+  let html = `<div class="category-header">
+    <div class="category-icon" style="background:rgba(255,159,80,.15);font-size:22px">🚑</div>
+    <div>
+      <div class="category-title" style="color:#ff9f50;">INJURED PLAYERS</div>
+      <div class="category-desc">${count} player${count!==1?'s':''} currently injured · Not available for auction</div>
+    </div>
+  </div>`;
+
+  if(!count){
+    html+=`<div style="text-align:center;padding:40px;color:var(--muted);"><div style="font-size:44px;margin-bottom:12px;">🏥</div><div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;">NO INJURED PLAYERS</div></div>`;
+  } else {
+    html+=`<div style="display:flex;flex-direction:column;gap:8px;">`;
+    injuredPlayers.forEach((p,i)=>{
+      const teamName = teamsData[p.team]?.name || p.teamName || p.team;
+      html+=`<div style="background:var(--card-bg);border:1px solid rgba(255,159,80,.2);border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:22px;">${flag(p.name)}</span>
+        <div style="flex:1;">
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px;">${p.name}${isForeign(p.name)?' <span style="font-size:10px;color:var(--blue);">✈</span>':''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${p.role||''} · Was in ${teamName} · Bought at ₹${p.price}</div>
+        </div>
+        <span style="background:rgba(255,159,80,.15);border:1px solid rgba(255,159,80,.3);color:#ff9f50;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:1px;">INJURED</span>
+        ${isAdmin?`<button onclick="removeFromInjured(${i})" style="background:rgba(255,68,68,.1);border:1px solid rgba(255,68,68,.3);color:var(--red);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;font-weight:700;">✕ REMOVE</button>`:''}
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+  el.innerHTML=html;
+}
+
+async function removeFromInjured(index){
+  if(!isAdmin) return;
+  const p = injuredPlayers[index];
+  if(!p) return;
+  if(!confirm(`Remove ${p.name} from injured list?`)) return;
+  const newInjured = injuredPlayers.filter((_,i)=>i!==index);
+  if(DEMO()){
+    injuredPlayers = newInjured;
+    renderInjuredPanel();
+  } else {
+    await db.ref('/injured').set(newInjured.length?newInjured:[]);
+  }
+  toast(p.name+' removed from injured list','green');
 }
 
 function toggleSet(id){document.getElementById(`card-${id}`).classList.toggle('open');}
@@ -2329,7 +2481,8 @@ async function adminAddPlayer(teamId){
 
 async function adminRemovePlayer(teamId, playerName){
   playerName = playerName.replace(/&apos;/g,"'");
-  if(!confirm('Remove '+playerName+' from '+(teamsData[teamId]?.name||teamId)+'?\nThis action will be logged in the console.')) return;
+  pendingRemove._teamId=teamId; pendingRemove._playerName=playerName; pendingRemove.source='squad';
+  openRemoveModal(teamId, playerName, 'squad'); return;
   const team = teamsData[teamId]||{};
   const players = team.players||[];
   const newPlayers = players.filter(p=>p!==playerName);
