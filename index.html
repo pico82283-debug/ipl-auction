@@ -657,6 +657,11 @@ function launchApp(){
     document.getElementById('admin-trade-box').style.display='block';
     document.getElementById('myteam-tab-btn').style.display='none';
     document.getElementById('trade-tab-btn').style.display='none';
+  } else {
+    document.getElementById('myteam-tab-btn').style.display='';
+    document.getElementById('trade-tab-btn').style.display='';
+  }
+  if(isAdmin){
     document.getElementById('squad-manager-section').style.display='block';
     document.getElementById('manage-teams-section').style.display='block';
     document.getElementById('allsquads-tab-btn').style.display='';
