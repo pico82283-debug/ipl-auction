@@ -39,9 +39,9 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
 .logout-btn:hover{color:var(--red);}
 
 /* TABS */
-.tabs{position:sticky;top:0;z-index:20;background:rgba(10,10,15,.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 16px;display:flex;gap:0;overflow-x:auto;scrollbar-width:none;}
+.tabs{position:sticky;top:0;z-index:20;background:rgba(10,10,15,.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:4px 12px 0;display:flex;flex-wrap:wrap;gap:2px;overflow-x:auto;scrollbar-width:none;}
 .tabs::-webkit-scrollbar{display:none;}
-.tab{padding:14px 20px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;white-space:nowrap;transition:all .25s;}
+.tab{padding:10px 14px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;white-space:nowrap;transition:all .25s;}
 .tab:hover{color:var(--text);}
 .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
 .tab .count{display:inline-block;margin-left:5px;background:var(--gold);color:var(--dark);font-size:9px;font-weight:700;padding:2px 5px;border-radius:20px;}
@@ -304,7 +304,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
 
 @media(max-width:600px){
   .player-grid{grid-template-columns:1fr 1fr;}
-  .tab{padding:11px 12px;font-size:10px;}
+  .tab{padding:8px 10px;font-size:10px;letter-spacing:1px;}
   h1{font-size:36px;}
   .auction-player-name{font-size:28px;}
   .user-badge{top:8px;right:8px;padding:5px 9px;font-size:11px;}
@@ -359,16 +359,16 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
   <nav class="tabs" id="tabs">
     <button class="tab auction-tab active" data-tab="auction" onclick="showTab('auction')"><span class="live-dot"></span>LIVE AUCTION</button>
     <button class="tab myteam-tab" data-tab="myteam" onclick="showTab('myteam')" id="myteam-tab-btn">🏏 MY TEAM</button>
-    <button class="tab trade-tab" data-tab="trade" onclick="showTab('trade')" id="trade-tab-btn">🔄 TRADES</button>
-    <button class="tab console-tab" data-tab="console" onclick="showTab('console')" id="console-tab-btn">📋 CONSOLE</button>
     <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="display:none;color:#a050ff;">👁 ALL SQUADS</button>
+    <button class="tab trade-tab" data-tab="trade" onclick="showTab('trade')" id="trade-tab-btn">🔄 TRADES</button>
     <button class="tab" style="color:#32dc96;" data-tab="sold-players" onclick="showTab('sold-players')" id="sold-players-tab-btn">✅ SOLD <span class="count" id="c-sold-players" style="background:#32dc96;">0</span></button>
-    <button class="tab" style="color:#ffd860;" data-tab="sold-log" onclick="showTab('sold-log')" id="sold-log-tab-btn">🏅 SOLD LOG</button>
-    <button class="tab" style="color:#ff9f50;" data-tab="injured" onclick="showTab('injured')" id="injured-tab-btn">🚑 INJURED <span class="count" id="c-injured" style="background:#ff9f50;">0</span></button>
     <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
-    <button class="tab" data-tab="pace" onclick="showTab('pace')">🔥 Pace <span class="count" id="c-pace"></span></button>
-    <button class="tab" data-tab="spin" onclick="showTab('spin')">🌀 Spin <span class="count" id="c-spin"></span></button>
-    <button class="tab" data-tab="bat" onclick="showTab('bat')">🏏 Bat <span class="count" id="c-bat"></span></button>
+    <button class="tab" style="color:#ff9f50;" data-tab="injured" onclick="showTab('injured')" id="injured-tab-btn">🚑 INJURED <span class="count" id="c-injured" style="background:#ff9f50;">0</span></button>
+    <button class="tab" style="color:#ffd860;" data-tab="sold-log" onclick="showTab('sold-log')" id="sold-log-tab-btn">🏅 SOLD LOG</button>
+    <button class="tab console-tab" data-tab="console" onclick="showTab('console')" id="console-tab-btn">📋 CONSOLE</button>
+    <button class="tab" data-tab="pace" onclick="showTab('pace')">🔥 PACE <span class="count" id="c-pace"></span></button>
+    <button class="tab" data-tab="spin" onclick="showTab('spin')">🌀 SPIN <span class="count" id="c-spin"></span></button>
+    <button class="tab" data-tab="bat" onclick="showTab('bat')">🏏 BAT <span class="count" id="c-bat"></span></button>
     <button class="tab" data-tab="wk" onclick="showTab('wk')">🧤 WK <span class="count" id="c-wk"></span></button>
     <button class="tab" data-tab="ar" onclick="showTab('ar')">⚡ AR <span class="count" id="c-ar"></span></button>
   </nav>
