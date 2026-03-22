@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IPL Mega Auction 2025</title>
+<title>IPL Mega Auction 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -318,7 +318,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">IPL<br>AUCTION</div>
-    <div class="login-sub">2025 · Live Bidding Platform</div>
+    <div class="login-sub">2026 · Live Bidding Platform</div>
     <input class="login-input" id="login-id" type="text" placeholder="Team ID / admin" autocomplete="off"/>
     <input class="login-input" id="login-pass" type="password" placeholder="Password"/>
     <button class="login-btn" onclick="doLogin()">ENTER AUCTION ROOM</button>
@@ -348,7 +348,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
 <div id="app">
   <header>
     <div class="trophy-line">🏆 IPL MEGA AUCTION — LIVE PLATFORM</div>
-    <h1>AUCTION<br>2025</h1>
+    <h1>AUCTION<br>2026</h1>
     <div class="subtitle">Real-Time Bidding · 5 Teams · ₹40 Purse</div>
     <div class="user-badge">
       <span id="header-user">—</span>
@@ -362,8 +362,9 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <button class="tab trade-tab" data-tab="trade" onclick="showTab('trade')" id="trade-tab-btn">🔄 TRADES</button>
     <button class="tab console-tab" data-tab="console" onclick="showTab('console')" id="console-tab-btn">📋 CONSOLE</button>
     <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="display:none;color:#a050ff;">👁 ALL SQUADS</button>
-    <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
     <button class="tab" style="color:#32dc96;" data-tab="sold-players" onclick="showTab('sold-players')" id="sold-players-tab-btn">✅ SOLD <span class="count" id="c-sold-players" style="background:#32dc96;">0</span></button>
+    <button class="tab" style="color:#ffd860;" data-tab="sold-log" onclick="showTab('sold-log')" id="sold-log-tab-btn">🏅 SOLD LOG</button>
+    <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
     <button class="tab" data-tab="pace" onclick="showTab('pace')">🔥 Pace <span class="count" id="c-pace"></span></button>
     <button class="tab" data-tab="spin" onclick="showTab('spin')">🌀 Spin <span class="count" id="c-spin"></span></button>
     <button class="tab" data-tab="bat" onclick="showTab('bat')">🏏 Bat <span class="count" id="c-bat"></span></button>
@@ -501,11 +502,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
         </table>
       </div>
 
-      <!-- SOLD LOG -->
-      <div id="sold-history">
-        <div class="section-title">🏅 SOLD PLAYERS LOG</div>
-        <div id="sold-list"><div style="color:var(--muted);font-size:13px;letter-spacing:1px;">No players sold yet</div></div>
-      </div>
+
     </div>
 
     <!-- MY TEAM PANEL -->
@@ -523,6 +520,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <div id="panel-unsold" class="category-panel"></div>
     <!-- SOLD PLAYERS PANEL -->
     <div id="panel-sold-players" class="category-panel"></div>
+    <div id="panel-sold-log" class="category-panel"><div id="sold-history" style="padding:4px 0;"><div class="section-title">🏅 SOLD PLAYERS LOG</div><div id="sold-list"><div style="color:var(--muted);font-size:13px;letter-spacing:1px;">No players sold yet</div></div></div></div>
     <!-- ALL SQUADS PANEL (admin only) -->
     <div id="panel-allsquads" class="category-panel"></div>
     <!-- CONSOLE PANEL -->
@@ -1379,6 +1377,7 @@ function showTab(key){
   if(key==='console') renderConsoleLogs();
   if(key==='unsold') renderUnsoldPanel();
   if(key==='sold-players') renderSoldPlayersPanel();
+  if(key==='sold-log') renderSoldLog();
   if(key==='allsquads') renderAllSquadsPanel();
 }
 
