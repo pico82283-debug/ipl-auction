@@ -1905,10 +1905,13 @@ async function quickRemovePlayer(teamId, playerName){
   if(!isAdmin){ toast('Access denied','red'); return; }
   const team = teamsData[teamId]||{};
   const teamName = team.name||teamId;
-  if(!confirm(`Remove ${playerName} from ${teamName}?\nPurse will NOT be auto-refunded. This will be logged.`)) return;
   const newPlayers = (team.players||[]).filter(p=>p!==playerName);
   const newPrices = {...(team.playerPrices||{})};
   const removedPrice = getPriceFromPrices(newPrices, playerName);
+  const refundAmt = removedPrice ? parseFloat(removedPrice) : 0;
+  const oldPurse = team.purse ?? TOTAL_PURSE;
+  const newPurse = +((oldPurse) + refundAmt).toFixed(2);
+  if(!confirm(`Remove ${playerName} from ${teamName}?\nBought at: ₹${refundAmt.toFixed(2)} — this will be refunded to their purse.\nThis action will be logged.`)) return;
   delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
@@ -1916,15 +1919,18 @@ async function quickRemovePlayer(teamId, playerName){
   if(DEMO()){
     teamsData[teamId].players = newPlayers;
     teamsData[teamId].playerPrices = newPrices;
+    teamsData[teamId].purse = newPurse;
     refreshAll();
   } else {
-    await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices});
+    try{
+      await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices, purse:newPurse});
+    } catch(e){ toast('Remove failed: '+e.message,'red'); return; }
   }
   addConsoleLog('remove',
     `${flag(playerName)} ${playerName} removed from ${teamName} by Admin`,
-    `${playerMeta}${isForeign(playerName)?' · ✈ Foreign':' · 🇮🇳 Domestic'} · Was bought at: ${removedPrice?'₹'+removedPrice:'unknown'} · Purse NOT refunded · Squad now: ${newSquadSize}/${MAX_SQUAD} · Foreign: ${newForeignCount}/${MAX_FOREIGN}`
+    `${playerMeta}${isForeign(playerName)?' · ✈ Foreign':' · 🇮🇳 Domestic'} · Bought at: ₹${refundAmt.toFixed(2)} · 💰 Refunded ₹${refundAmt.toFixed(2)} · Purse: ₹${oldPurse.toFixed(2)} → ₹${newPurse.toFixed(2)} · Squad now: ${newSquadSize}/${MAX_SQUAD}`
   );
-  toast(playerName+' removed from '+teamName,'red');
+  toast(playerName+' removed & ₹'+refundAmt.toFixed(2)+' refunded to '+teamName,'green');
 }
 
 
@@ -2334,13 +2340,17 @@ async function adminRemovePlayer(teamId, playerName){
   const newSquadSize = newPlayers.length;
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
   const playerMeta = getPlayerMeta(playerName);
+  const oldPurse = team.purse ?? TOTAL_PURSE;
+  const refundAmt = removedPrice ? parseFloat(removedPrice) : 0;
+  const newPurse = +((oldPurse) + refundAmt).toFixed(2);
   if(DEMO()){
     teamsData[teamId].players = newPlayers;
     teamsData[teamId].playerPrices = newPrices;
+    teamsData[teamId].purse = newPurse;
     refreshAll();
   } else {
     try{
-      await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices});
+      await db.ref('/teams/'+teamId).update({players:newPlayers, playerPrices:newPrices, purse:newPurse});
     } catch(e){
       toast('⚠️ Remove failed — network error. Try again.','red');
       console.error('adminRemovePlayer failed:',e);
@@ -2349,9 +2359,9 @@ async function adminRemovePlayer(teamId, playerName){
   }
   addConsoleLog('remove',
     `${flag(playerName)} ${playerName} removed from ${teamName} by Admin`,
-    `${playerMeta}${isForeign(playerName)?' · 🌍 Foreign':' · 🇮🇳 Domestic'} · Was bought at: ${removedPrice?'₹'+removedPrice:'unknown'} · Purse NOT refunded · Squad now: ${newSquadSize}/${MAX_SQUAD} · Foreign: ${newForeignCount}/${MAX_FOREIGN}`
+    `${playerMeta}${isForeign(playerName)?' · 🌍 Foreign':' · 🇮🇳 Domestic'} · Bought at: ${removedPrice?'₹'+removedPrice:'unknown'} · 💰 Refunded ₹${refundAmt.toFixed(2)} · Purse: ₹${oldPurse.toFixed(2)} → ₹${newPurse.toFixed(2)} · Squad now: ${newSquadSize}/${MAX_SQUAD}`
   );
-  toast(playerName+' removed from '+teamName,'red');
+  toast(playerName+' removed & ₹'+refundAmt.toFixed(2)+' refunded to '+teamName,'green');
 }
 
 async function adminAdjustWallet(teamId, action){
