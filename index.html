@@ -1934,9 +1934,6 @@ function renderAllSquadsPanel(){
 async function quickRemovePlayer(teamId, playerName){
   playerName = playerName.replace(/&apos;/g,"'");
   if(!isAdmin){ toast('Access denied','red'); return; }
-  const team = teamsData[teamId]||{};
-  const teamName = team.name||teamId;
-  pendingRemove._teamId=teamId; pendingRemove._playerName=playerName; pendingRemove.source='allsquads';
   openRemoveModal(teamId, playerName, 'allsquads'); return;
   delete newPrices[playerName]; delete newPrices[fbKey(playerName)];
   const newSquadSize = newPlayers.length;
@@ -2135,8 +2132,8 @@ function closeRemoveModal(){
 }
 
 async function confirmRemove(action){
-  const tId = pendingRemove._teamId;
-  const pName = pendingRemove._playerName;
+  const tId = pendingRemove.teamId;
+  const pName = pendingRemove.playerName;
   closeRemoveModal();
   await executeRemove(tId, pName, action);
 }
@@ -2147,7 +2144,10 @@ async function executeRemove(teamId, playerName, action){
   const teamName = team.name||teamId;
   const newPlayers = (team.players||[]).filter(p=>p!==playerName);
   const newPrices = {...(team.playerPrices||{})};
-  const removedPrice = getPriceFromPrices(newPrices, playerName);
+  // Try playerPrices first, then fall back to soldLog entry as source of truth
+  const removedPrice = getPriceFromPrices(newPrices, playerName)
+    || (auctionState.soldLog||[]).find(e=>e.player===playerName&&e.team===teamId)?.price
+    || null;
   const refundAmt = removedPrice ? parseFloat(removedPrice) : 0;
   const oldPurse = team.purse ?? TOTAL_PURSE;
   const newPurse = +((oldPurse) + refundAmt).toFixed(2);
@@ -2486,7 +2486,6 @@ async function adminAddPlayer(teamId){
 
 async function adminRemovePlayer(teamId, playerName){
   playerName = playerName.replace(/&apos;/g,"'");
-  pendingRemove._teamId=teamId; pendingRemove._playerName=playerName; pendingRemove.source='squad';
   openRemoveModal(teamId, playerName, 'squad'); return;
   const team = teamsData[teamId]||{};
   const players = team.players||[];
