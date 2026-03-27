@@ -2156,10 +2156,14 @@ async function executeRemove(teamId, playerName, action){
   const newForeignCount = newPlayers.filter(p=>isForeign(p)).length;
   const playerMeta = getPlayerMeta(playerName);
 
+  // Remove player from soldLog so they no longer appear as sold to that team
+  const updatedSoldLog = (auctionState.soldLog||[]).filter(e => e.player !== playerName);
+
   if(DEMO()){
     teamsData[teamId].players = newPlayers;
     teamsData[teamId].playerPrices = newPrices;
     teamsData[teamId].purse = newPurse;
+    auctionState = {...auctionState, soldLog: updatedSoldLog};
     if(action==='injured'){
       injuredPlayers.push({name:playerName,team:teamId,teamName,price:removedPrice||'0',role:playerMeta});
     }
@@ -2170,6 +2174,7 @@ async function executeRemove(teamId, playerName, action){
       updates[`/teams/${teamId}/players`] = newPlayers;
       updates[`/teams/${teamId}/playerPrices`] = newPrices;
       updates[`/teams/${teamId}/purse`] = newPurse;
+      updates['/auction/soldLog'] = updatedSoldLog;
       if(action==='injured'){
         const newInjured = [...injuredPlayers, {name:playerName,team:teamId,teamName,price:removedPrice||'0',role:playerMeta}];
         updates['/injured'] = newInjured;
