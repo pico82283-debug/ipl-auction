@@ -1559,7 +1559,8 @@ function renderCategoryPanel(catKey){
   cat.sets.forEach(set=>{
     const soldNames=(auctionState.soldLog||[]).filter(s=>s.sold).map(s=>s.player);
     const unsoldNames=(auctionState.soldLog||[]).filter(s=>!s.sold).map(s=>s.player);
-    const processedNames=[...soldNames,...unsoldNames];
+    const injuredNames=(injuredPlayers||[]).map(p=>p.name);
+    const processedNames=[...soldNames,...unsoldNames,...injuredNames];
     const availablePlayers=set.players.filter(p=>!processedNames.includes(p));
     if(!availablePlayers.length) return;
     html+=`<div class="set-card" id="card-${set.id}" style="border-color:${c.b}"><div class="set-header" onclick="toggleSet('${set.id}')"><div class="set-title-group"><span class="set-badge" style="background:${c.b};color:${c.t}">${set.id}</span><div><div class="set-name">${set.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${set.desc}</div></div></div><div style="display:flex;align-items:center;gap:8px"><div class="set-count-badge">👤 ${availablePlayers.length}</div><span class="chevron">▼</span></div></div><div class="set-body"><div class="player-grid">${availablePlayers.map((p,i)=>`<div class="player-chip"><span class="player-num">${String(i+1).padStart(2,'0')}</span><div style="display:flex;flex-direction:column;min-width:0"><span class="player-name">${p}</span>${isForeign(p)?'<span style="font-size:9px;margin-left:2px;">✈</span>':''}<span style="font-size:9px;color:var(--gold)">${getBasePrice(p)}</span></div><span class="flag">${flag(p)}</span></div>`).join('')}</div></div></div>`;
