@@ -361,6 +361,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <button class="tab myteam-tab" data-tab="myteam" onclick="showTab('myteam')" id="myteam-tab-btn">🏏 MY TEAM</button>
     <button class="tab" data-tab="allsquads" onclick="showTab('allsquads')" id="allsquads-tab-btn" style="display:none;color:#a050ff;">👁 ALL SQUADS</button>
     <button class="tab trade-tab" data-tab="trade" onclick="showTab('trade')" id="trade-tab-btn">🔄 TRADES</button>
+    <button class="tab" style="color:#ff9f50;" data-tab="trade-history" onclick="showTab('trade-history')" id="trade-history-tab-btn">📜 TRADE HISTORY</button>
     <button class="tab" style="color:#32dc96;" data-tab="sold-players" onclick="showTab('sold-players')" id="sold-players-tab-btn">✅ SOLD <span class="count" id="c-sold-players" style="background:#32dc96;">0</span></button>
     <button class="tab" style="color:#ff6b6b;" data-tab="unsold" onclick="showTab('unsold')" id="unsold-tab-btn">🔴 UNSOLD <span class="count" id="c-unsold" style="background:#ff6b6b;">0</span></button>
     <button class="tab" style="color:#ff9f50;" data-tab="injured" onclick="showTab('injured')" id="injured-tab-btn">🚑 INJURED <span class="count" id="c-injured" style="background:#ff9f50;">0</span></button>
@@ -530,6 +531,7 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
       <div id="console-content"></div>
     </div>
     <!-- TRADE PANEL -->
+    <div id="panel-trade-history" class="category-panel"></div>
     <div id="panel-trade" class="category-panel">
       <div id="trade-content"></div>
     </div>
@@ -728,6 +730,8 @@ function setupFirebaseListeners(){
     injuredPlayers=snap.exists()?(Array.isArray(snap.val())?snap.val():Object.values(snap.val())):[]; 
     renderInjuredPanel();
     document.getElementById('c-injured').textContent=injuredPlayers.length||'';
+    Object.keys(PLAYER_DATA).forEach(renderCategoryPanel);
+    if(isAdmin) populateAdminPlayers();
   });
   listeners.push(()=>injRef.off('value',injOff));
   const tRef=db.ref('/teams');
@@ -1192,10 +1196,12 @@ function populateAdminPlayers(){
     });
   } else {
     const processedNames=(auctionState.soldLog||[]).map(s=>s.player);
+    const injuredNames=(injuredPlayers||[]).map(p=>p.name);
+    const allExcluded=[...processedNames,...injuredNames];
     PLAYER_DATA[cat].sets.forEach(set=>{
       const og=document.createElement('optgroup'); og.label=set.name;
       set.players.forEach(p=>{
-        if(!processedNames.includes(p)){const o=document.createElement('option');o.value=p;o.textContent=p+(isForeign(p)?' ✈':'');og.appendChild(o);}
+        if(!allExcluded.includes(p)){const o=document.createElement('option');o.value=p;o.textContent=p+(isForeign(p)?' ✈':'');og.appendChild(o);}
       });
       if(og.children.length) sel.appendChild(og);
     });
@@ -1413,6 +1419,7 @@ function showTab(key){
   if(key==='unsold') renderUnsoldPanel();
   if(key==='sold-players') renderSoldPlayersPanel();
   if(key==='injured') renderInjuredPanel();
+  if(key==='trade-history') renderTradeHistory();
   if(key==='sold-log') renderSoldLog();
   if(key==='allsquads') renderAllSquadsPanel();
 }
@@ -2563,7 +2570,7 @@ let tradeSelectedMine=null, tradeSelectedTheirs=null;
 function setupTradeListener(){
   if(DEMO()) return;
   const tRef=db.ref('/trades');
-  const tOff=tRef.on('value',snap=>{ tradesData=snap.val()||{}; renderTradePanel(); updateAdminTradePanel(); });
+  const tOff=tRef.on('value',snap=>{ tradesData=snap.val()||{}; renderTradePanel(); updateAdminTradePanel(); renderTradeHistory(); });
   listeners.push(()=>tRef.off('value',tOff));
   const twRef=db.ref('/tradeWindow');
   const twOff=twRef.on('value',snap=>{ tradeWindowOpen=snap.val()===true; renderTradePanel(); updateAdminTradePanel(); updateTradeTabLabel(); });
@@ -2587,6 +2594,65 @@ async function adminToggleTrade(){
   toast(newVal?'Trade window OPENED':'Trade window CLOSED',newVal?'green':'red');
 }
 
+
+// ═══════════════════════ TRADE HISTORY PANEL ═══════════════════════
+function renderTradeHistory(){
+  const el=document.getElementById('panel-trade-history');
+  if(!el) return;
+
+  const all=Object.entries(tradesData)
+    .filter(([,t])=>t.status!=='pending')
+    .sort((a,b)=>(b[1].timestamp||0)-(a[1].timestamp||0));
+
+  let html=`<div class="category-header">
+    <div class="category-icon" style="background:rgba(255,159,80,.15);font-size:22px;">📜</div>
+    <div>
+      <div class="category-title" style="color:#ff9f50;">TRADE HISTORY</div>
+      <div class="category-desc">${all.length} trade${all.length!==1?'s':''} · Visible to everyone · Read only</div>
+    </div>
+  </div>`;
+
+  if(!all.length){
+    html+=`<div style="text-align:center;padding:48px;color:var(--muted);"><div style="font-size:44px;margin-bottom:10px;">🔄</div><div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;">NO TRADE HISTORY YET</div></div>`;
+    el.innerHTML=html; return;
+  }
+
+  all.forEach(([,t])=>{
+    const fn=teamsData[t.from]?.name||t.from.toUpperCase();
+    const tn=teamsData[t.to]?.name||t.to.toUpperCase();
+    const isSuccess=t.status==='accepted';
+    const statusColor=isSuccess?'var(--green)':'var(--red)';
+    const statusBg=isSuccess?'rgba(50,220,150,.1)':'rgba(255,68,68,.1)';
+    const statusBorder=isSuccess?'rgba(50,220,150,.3)':'rgba(255,68,68,.25)';
+    const statusLabel=isSuccess?'✅ COMPLETED':t.status==='rejected'?'❌ DECLINED':'❌ CANCELLED';
+
+    html+=`<div style="background:var(--card-bg);border:1px solid ${isSuccess?'rgba(50,220,150,.2)':'rgba(255,68,68,.15)'};border-radius:14px;padding:16px 18px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--text);">${fn}</span>
+          <span style="font-size:11px;color:var(--muted);">proposed to</span>
+          <span style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--text);">${tn}</span>
+        </div>
+        <span style="background:${statusBg};color:${statusColor};border:1px solid ${statusBorder};border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;letter-spacing:1px;">${statusLabel}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="background:var(--surface);border:1px solid rgba(255,159,80,.25);border-radius:8px;padding:8px 14px;text-align:center;">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:4px;">${fn} OFFERED</div>
+          <div style="font-size:13px;font-weight:700;color:#ff9f50;">${flag(t.offerPlayer)} ${t.offerPlayer}</div>
+        </div>
+        <div style="font-size:20px;color:var(--muted);">⇄</div>
+        <div style="background:var(--surface);border:1px solid rgba(255,159,80,.25);border-radius:8px;padding:8px 14px;text-align:center;">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:4px;">${tn} OFFERED</div>
+          <div style="font-size:13px;font-weight:700;color:#ff9f50;">${flag(t.wantPlayer)} ${t.wantPlayer}</div>
+        </div>
+        ${isSuccess?`<div style="margin-left:auto;font-size:11px;color:var(--green);letter-spacing:1px;">Players swapped ✓</div>`:''}
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML=html;
+}
+
 function updateAdminTradePanel(){
   const label=document.getElementById('trade-window-status-label');
   const btn=document.getElementById('trade-toggle-btn');
@@ -2594,12 +2660,38 @@ function updateAdminTradePanel(){
   if(tradeWindowOpen){ label.textContent='OPEN'; label.style.color='var(--green)'; btn.textContent='🔒 CLOSE TRADE WINDOW'; btn.className='admin-btn btn-red'; }
   else { label.textContent='CLOSED'; label.style.color='var(--red)'; btn.textContent='🔓 OPEN TRADE WINDOW'; btn.className='admin-btn btn-orange'; }
   const el=document.getElementById('admin-pending-trades'); if(!el) return;
-  const pending=Object.entries(tradesData).filter(([,t])=>t.status==='pending');
-  if(!pending.length){ el.innerHTML='<div style="font-size:12px;color:var(--muted);letter-spacing:1px;">No pending trades.</div>'; return; }
-  let html='<div style="font-size:11px;letter-spacing:2px;color:var(--muted);margin-bottom:8px;">PENDING TRADES</div>';
+
+  const all=Object.entries(tradesData).sort((a,b)=>(b[1].timestamp||0)-(a[1].timestamp||0));
+  const pending=all.filter(([,t])=>t.status==='pending');
+  const completed=all.filter(([,t])=>t.status==='accepted');
+  const declined=all.filter(([,t])=>t.status==='rejected'||t.status==='cancelled');
+
+  // Show only LIVE/PENDING trades
+  if(!pending.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--muted);letter-spacing:1px;padding:10px 0;text-align:center;">🟢 No active trades right now.</div>';
+    return;
+  }
+
+  let html=`<div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;color:#ff9f50;margin-bottom:10px;">⏳ LIVE TRADES — ${pending.length} ACTIVE</div>`;
   pending.forEach(([,t])=>{
-    const fn=teamsData[t.from]?.name||t.from, tn=teamsData[t.to]?.name||t.to;
-    html+=`<div style="background:var(--surface);border-radius:8px;padding:10px 14px;margin-bottom:7px;font-size:13px;"><strong>${fn}</strong> offers <span style="color:#ff9f50">${t.offerPlayer}</span> &#8644; <strong>${tn}</strong> gives <span style="color:#ff9f50">${t.wantPlayer}</span></div>`;
+    const fn=teamsData[t.from]?.name||t.from.toUpperCase();
+    const tn=teamsData[t.to]?.name||t.to.toUpperCase();
+    html+=`<div style="background:rgba(255,159,80,.08);border:1px solid rgba(255,159,80,.35);border-radius:12px;padding:16px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div style="text-align:center;min-width:100px;">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:4px;">FROM</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--text);">${fn}</div>
+          <div style="background:rgba(255,159,80,.15);border:1px solid rgba(255,159,80,.4);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;color:#ff9f50;margin-top:5px;">${flag(t.offerPlayer)} ${t.offerPlayer}</div>
+        </div>
+        <div style="font-size:24px;color:#ff9f50;flex-shrink:0;">⇄</div>
+        <div style="text-align:center;min-width:100px;">
+          <div style="font-size:9px;letter-spacing:2px;color:var(--muted);margin-bottom:4px;">TO</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:var(--text);">${tn}</div>
+          <div style="background:rgba(255,159,80,.15);border:1px solid rgba(255,159,80,.4);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;color:#ff9f50;margin-top:5px;">${flag(t.wantPlayer)} ${t.wantPlayer}</div>
+        </div>
+        <div style="margin-left:auto;font-size:10px;color:var(--muted);letter-spacing:1px;text-align:right;">⏳ Awaiting<br><strong style="color:var(--text);">${tn}</strong></div>
+      </div>
+    </div>`;
   });
   el.innerHTML=html;
 }
@@ -2641,17 +2733,7 @@ function renderTradePanel(){
     html+=`</div>`;
   }
 
-  // History
-  const history=Object.entries(tradesData).filter(([,t])=>(t.from===currentUser||t.to===currentUser)&&t.status!=='pending').sort((a,b)=>(b[1].timestamp||0)-(a[1].timestamp||0)).slice(0,20);
-  if(history.length){
-    html+=`<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:18px;margin-top:4px;"><div class="section-title">&#128220; TRADE HISTORY</div>`;
-    history.forEach(([,t])=>{
-      const fn=teamsData[t.from]?.name||t.from, tn=teamsData[t.to]?.name||t.to;
-      const badge=t.status==='accepted'?'<span class="completed-tag">COMPLETED</span>':t.status==='cancelled'?'<span class="rejected-tag">CANCELLED</span>':'<span class="rejected-tag">DECLINED</span>';
-      html+=`<div class="trade-log-row"><span style="font-weight:700;font-size:12px;">${fn}</span><span style="color:#ff9f50;font-size:12px;">${t.offerPlayer}</span><span style="color:var(--muted)">&#8644;</span><span style="color:#ff9f50;font-size:12px;">${t.wantPlayer}</span><span style="font-weight:700;font-size:12px;">${tn}</span>${badge}</div>`;
-    });
-    html+=`</div>`;
-  }
+  // Trade history moved to 📜 TRADE HISTORY tab
   el.innerHTML=html;
   tradeSelectedMine=null; tradeSelectedTheirs=null;
 }
