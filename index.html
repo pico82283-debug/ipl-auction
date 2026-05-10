@@ -302,6 +302,14 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
 .wallet-set-btn{background:rgba(255,184,0,.15);border:1px solid rgba(255,184,0,.3);color:var(--gold);border-radius:6px;padding:6px 12px;font-family:'Bebas Neue',sans-serif;font-size:13px;cursor:pointer;}
 .wallet-set-btn:hover{background:rgba(255,184,0,.3);}
 
+/* END SEASON */
+#end-season-banner{position:relative;z-index:5;text-align:center;padding:14px 20px;font-family:'Orbitron',monospace;font-size:12px;letter-spacing:3px;font-weight:700;background:linear-gradient(90deg,rgba(255,68,68,.15),rgba(255,80,0,.1));border-bottom:2px solid rgba(255,68,68,.5);color:var(--red);display:none;}
+#end-season-banner.active{display:block;}
+.season-ended-watermark{pointer-events:none;position:fixed;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;opacity:.03;transform:rotate(-30deg);font-family:'Bebas Neue',sans-serif;font-size:clamp(80px,15vw,180px);letter-spacing:10px;color:var(--red);user-select:none;}
+.end-season-btn{background:linear-gradient(135deg,#7f0000,#c0392b);color:#fff;border:2px solid rgba(255,68,68,.6);border-radius:8px;padding:9px 18px;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;cursor:pointer;transition:opacity .2s;margin-right:6px;margin-top:3px;box-shadow:0 0 16px rgba(255,68,68,.2);}
+.end-season-btn:hover{opacity:.85;}
+#end-season-modal{display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.92);align-items:center;justify-content:center;}
+
 @media(max-width:600px){
   .player-grid{grid-template-columns:1fr 1fr;}
   .tab{padding:8px 10px;font-size:10px;letter-spacing:1px;}
@@ -379,6 +387,12 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
     <span class="blive-dot"></span><span id="banner-text">AUCTION OFFLINE</span>
   </div>
 
+  <!-- END SEASON BANNER (shown permanently once season ended) -->
+  <div id="end-season-banner">
+    🏁 &nbsp; SEASON ENDED — READ-ONLY MODE &nbsp; · &nbsp; All bidding, trading and admin controls are permanently disabled &nbsp; 🏁
+  </div>
+  <div class="season-ended-watermark" id="season-watermark" style="display:none;">SEASON ENDED</div>
+
   <div class="content">
 
     <!-- AUCTION PANEL -->
@@ -419,6 +433,9 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
             <button class="admin-btn" style="background:rgba(80,160,255,.15);border:1px solid rgba(80,160,255,.3);color:var(--blue);" onclick="adminForceSync()">🔃 FORCE SYNC</button>
             <button class="admin-btn" style="background:rgba(50,220,150,.1);border:1px solid rgba(50,220,150,.3);color:var(--green);" onclick="adminRepairSquads()">🔧 REPAIR SQUADS</button>
             <button class="admin-btn" style="background:rgba(255,68,68,.15);border:1px solid rgba(255,68,68,.4);color:var(--red);margin-top:8px;" onclick="adminFullReset()">⚠️ FULL SYSTEM RESET</button>
+            <hr style="border:none;border-top:1px solid rgba(255,68,68,.2);margin:12px 0;">
+            <button class="end-season-btn" onclick="adminEndSeasonPrompt()">🏁 END SEASON</button>
+            <div style="font-size:10px;color:var(--muted);margin-top:5px;letter-spacing:.5px;">Locks everything permanently — all users become read-only. Cannot be undone.</div>
           </div>
         </div>
         </div>
@@ -550,6 +567,29 @@ h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(32px,6vw,64px);letter-spa
       <button onclick="confirmRemove('injured')" style="background:rgba(255,159,80,.15);border:1px solid rgba(255,159,80,.4);color:#ff9f50;border-radius:10px;padding:14px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;">🚑 MARK AS INJURED<br><span style="font-size:11px;font-family:'Rajdhani',sans-serif;letter-spacing:1px;opacity:.7;">Remove from squad, goes to Injured tab, not available for auction</span></button>
       <button onclick="confirmRemove('reauction')" style="background:rgba(50,220,150,.1);border:1px solid rgba(50,220,150,.3);color:var(--green);border-radius:10px;padding:14px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;">🔄 RELEASE FOR RE-AUCTION<br><span style="font-size:11px;font-family:'Rajdhani',sans-serif;letter-spacing:1px;opacity:.7;">Remove from squad, player goes back to their category for bidding</span></button>
       <button onclick="closeRemoveModal()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--muted);border-radius:10px;padding:11px;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;cursor:pointer;">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- END SEASON CONFIRM MODAL -->
+<div id="end-season-modal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.95);align-items:center;justify-content:center;">
+  <div style="background:var(--card-bg);border:2px solid var(--red);border-radius:18px;padding:36px 32px;max-width:460px;width:90%;text-align:center;animation:popIn .3s cubic-bezier(.34,1.56,.64,1);">
+    <div style="font-size:56px;margin-bottom:8px;">🏁</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:3px;color:var(--red);margin-bottom:10px;">END THE SEASON</div>
+    <div style="font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:18px;">This will <strong style="color:var(--text);">permanently lock</strong> the entire platform into read-only mode:</div>
+    <div style="background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.25);border-radius:10px;padding:16px;margin-bottom:20px;text-align:left;font-size:13px;line-height:2;">
+      🔒 All team owners lose bidding ability<br>
+      🔒 All trade proposals are disabled<br>
+      🔒 Admin controls are permanently hidden<br>
+      🔒 No one can modify any data<br>
+      📖 Everyone can still view squads &amp; results
+    </div>
+    <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:8px;letter-spacing:1px;">⚠️ THIS CANNOT BE REVERSED.</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:24px;letter-spacing:.5px;">Type <strong style="color:var(--text);">END SEASON</strong> below to confirm:</div>
+    <input id="end-season-confirm-input" type="text" placeholder="Type END SEASON" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700;letter-spacing:2px;outline:none;text-align:center;margin-bottom:16px;"/>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <button id="end-season-confirm-btn" onclick="confirmEndSeason()" style="background:var(--red);color:#fff;border:none;border-radius:8px;padding:13px 28px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;opacity:.4;transition:opacity .2s;" disabled>🏁 END SEASON</button>
+      <button onclick="document.getElementById('end-season-modal').style.display='none'" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:13px 24px;font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;cursor:pointer;">CANCEL</button>
     </div>
   </div>
 </div>
@@ -692,6 +732,8 @@ function launchApp(){
   }
   updateHeaderUser();
   refreshAll();
+  // If season was already ended (persisted in Firebase), lock immediately
+  if(auctionState.seasonEnded) applySeasonEndedUI();
 }
 
 function updateHeaderUser(){
@@ -720,6 +762,9 @@ function refreshAll(){
   renderInjuredPanel();
   document.getElementById('c-injured').textContent=injuredPlayers.length||'';
   document.getElementById('sold-count').textContent=(auctionState.soldLog||[]).filter(s=>s.sold).length;
+  // If season is ended, re-apply locked UI every refresh
+  if(auctionState.seasonEnded && !seasonEnded) applySeasonEndedUI();
+  else if(seasonEnded) applySeasonEndedUI();
 }
 
 // ═══════════════════════ FIREBASE LISTENERS ═══════════════════════
@@ -989,6 +1034,7 @@ function updateMyWallet(){
 
 // ═══════════════════════ PLACE BID ═══════════════════════
 async function placeBid(amount){
+  if(seasonEnded||auctionState.seasonEnded){toast('🏁 Season has ended — read-only mode','red');return;}
   if(!currentUser||isAdmin) return;
   const team=teamsData[currentUser]||{};
   const players=team.players||[];
@@ -1220,6 +1266,7 @@ function updateUnsoldPoolOption(){
 }
 
 async function adminAnnounce(){
+  if(seasonEnded||auctionState.seasonEnded){toast('🏁 Season has ended — read-only mode','red');return;}
   if(!auctionLive){toast('Set auction to LIVE first before announcing a player!','red');return;}
   const player=document.getElementById('admin-player-select').value;
   const base=parseFloat(document.getElementById('admin-base-price').value);
@@ -1232,6 +1279,7 @@ async function adminAnnounce(){
 }
 
 async function adminSell(){
+  if(seasonEnded||auctionState.seasonEnded){toast('🏁 Season has ended — read-only mode','red');return;}
   if(sellInProgress){toast('Sale already processing...','red');return;}
   const bids=auctionState.bids||{};
   const entries=Object.entries(bids).sort((a,b)=>b[1]-a[1]);
@@ -1840,6 +1888,80 @@ async function confirmFullReset(){
   );
 
   toast('✅ Full system reset complete — everything is fresh!', 'green');
+}
+
+
+// ═══════════════════════ END SEASON ═══════════════════════
+let seasonEnded = false;
+
+function applySeasonEndedUI(){
+  seasonEnded = true;
+  // Show permanent banner
+  const banner = document.getElementById('end-season-banner');
+  if(banner) banner.classList.add('active');
+  // Show watermark
+  const wm = document.getElementById('season-watermark');
+  if(wm) wm.style.display = 'flex';
+  // Hide auction live banner (season supersedes it)
+  const lb = document.getElementById('auction-live-banner');
+  if(lb) lb.style.display = 'none';
+  // Hide ALL interactive admin controls
+  const adminPanel = document.getElementById('admin-panel');
+  if(adminPanel) adminPanel.style.display = 'none';
+  const adminTradeBox = document.getElementById('admin-trade-box');
+  if(adminTradeBox) adminTradeBox.style.display = 'none';
+  const squadMgr = document.getElementById('squad-manager-section');
+  if(squadMgr) squadMgr.style.display = 'none';
+  const manageSec = document.getElementById('manage-teams-section');
+  if(manageSec) manageSec.style.display = 'none';
+  // Disable all bid buttons
+  document.querySelectorAll('.bid-btn').forEach(b=>{ b.disabled=true; b.style.opacity='.2'; });
+  // Hide bid section
+  const bidSec = document.getElementById('bid-section');
+  if(bidSec) bidSec.style.display = 'none';
+  // Hide trade tab for non-admins
+  const tradeTab = document.getElementById('trade-tab-btn');
+  if(tradeTab) tradeTab.style.display = 'none';
+  // Stop any running timer
+  stopTimer();
+}
+
+function adminEndSeasonPrompt(){
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  if(seasonEnded){ toast('Season has already ended','red'); return; }
+  const modal = document.getElementById('end-season-modal');
+  const input = document.getElementById('end-season-confirm-input');
+  const btn   = document.getElementById('end-season-confirm-btn');
+  input.value = '';
+  btn.disabled = true;
+  btn.style.opacity = '.4';
+  modal.style.display = 'flex';
+  setTimeout(()=>input.focus(), 100);
+  input.oninput = ()=>{
+    const match = input.value.trim().toUpperCase() === 'END SEASON';
+    btn.disabled = !match;
+    btn.style.opacity = match ? '1' : '.4';
+  };
+}
+
+async function confirmEndSeason(){
+  if(!isAdmin){ toast('Access denied','red'); return; }
+  const input = document.getElementById('end-season-confirm-input');
+  if(input.value.trim().toUpperCase() !== 'END SEASON'){ toast('Type END SEASON to confirm','red'); return; }
+  document.getElementById('end-season-modal').style.display = 'none';
+  if(DEMO()){
+    auctionState = {...auctionState, status:'idle', seasonEnded:true};
+  } else {
+    try{
+      await db.ref('/auction/seasonEnded').set(true);
+      await db.ref('/auction/status').set('idle');
+      await db.ref('/tradeWindow').set(false);
+      await db.ref('/auctionLive').set(false);
+    } catch(e){ toast('Failed to end season — try again','red'); return; }
+  }
+  addConsoleLog('system','🏁 SEASON ENDED by Admin','All users are now in read-only mode. No further changes can be made.');
+  applySeasonEndedUI();
+  toast('🏁 Season has been ended. Platform is now read-only.','green');
 }
 
 
@@ -2763,6 +2885,7 @@ function renderTradePlayerLists(){
 }
 
 async function sendTradeProposal(){
+  if(seasonEnded||auctionState.seasonEnded){toast('🏁 Season has ended — read-only mode','red');return;}
   if(!tradeSelectedMine){toast('Select your player to offer','red');return;}
   if(!tradeSelectedTheirs){toast('Select the player you want','red');return;}
   const targetId=document.getElementById('trade-target-team')?.value;
